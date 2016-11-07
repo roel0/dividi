@@ -346,8 +346,7 @@ static DWORD WINAPI connection_handler( LPVOID s_conn )
        * references in queue
        * */
       for(i=0; i<QUEUE_SIZE; i++) {
-        if(queue[i]->conn == &conn)
-        {
+        if(queue[i]->conn == &conn) {
           queue[i]->conn = NULL;
           free(queue[i]->command);
           queue[i]->command = NULL;
@@ -356,6 +355,8 @@ static DWORD WINAPI connection_handler( LPVOID s_conn )
       break;
     }
   }
+  // Thread has ownership!
+  free(s_con);
 #ifdef __linux__
   return NULL;
 #elif _WIN32
