@@ -356,7 +356,7 @@ static DWORD WINAPI connection_handler( LPVOID s_conn )
     }
   }
   // Thread has ownership!
-  free(s_con);
+  free(s_conn);
 #ifdef __linux__
   return NULL;
 #elif _WIN32
