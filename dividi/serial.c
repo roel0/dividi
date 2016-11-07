@@ -28,6 +28,8 @@
 
 #include "serial.h"
 
+#define SERIAL_DATA_CHUNK_SIZE 512
+#define SERIAL_DATA_MAX        50*SERIAL_DATA_CHUNK_SIZE
 
 #ifdef __linux__
 /**
@@ -217,14 +219,14 @@ void serial_close(HANDLE serial_port)
  * This fynction will write data on a given
  * serial port
  *
- * @serial_port the serial port
+ * @serial_port the serial port identifier
  * @data pointer to a null terminated string
  */
 int serial_write(HANDLE serial_port, char *data)
 {
   int err = 0;
 #ifdef __linux__
-  if(write(serial_port,data,strlen(data)) != strlen(data)) {
+  if(write(serial_port, data, strlen(data)) != strlen(data)) {
 #elif _WIN32
   DWORD bytes_written;
   if(!WriteFile(serial_port,data, strlen(data), &bytes_written, NULL)) {
@@ -274,35 +276,35 @@ int serial_read_error(HANDLE serial_port, char *data)
 }
 
 /**
- * This function will read from the serial port
- * until a newline is found
- * Or it will timeout
+ * Reads chunks of data from a given serial port
  *
- * @serial_port the serial port handler
- * @data user allocated buffer to store the
- *       to be read data in
- *
+ * @serial_port the serial port identifier
+ * @data location for the to be read data
  * @return the amount of bytes read
  */
-int serial_read(HANDLE serial_port, char *data) {
-  char c;
-  int index = 0;
+int serial_read(HANDLE serial_port, char *data)
+{
+  int bytes_read;
+  int total_read;
 
+  data = (char *) malloc(SERIAL_DATA_CHUNK_SIZE);
+  char *pos = data;
+  while(1) {
 #ifdef __linux__
-  while(read(serial_port, &c, 1) > 0) {
+    bytes_read = read(serial_port, pos, SERIAL_DATA_CHUNK_SIZE);
 #elif _WIN32
-  DWORD bytes_read;
-  while(ReadFile(serial_port, &c, 1, &bytes_read, NULL)) {
-    if(bytes_read != 1) {
-      continue;
-    }
+    ReadFile(serial_port, pos, SERIAL_DATA_CHUNK_SIZE, &bytes_read, NULL);
 #endif
-    data[index++] = c;
-    if(c == '\n') {
-      data[index] = '\0';
+    if(!bytes_read || ((total_read+=bytes_read) >= SERIAL_DATA_MAX)) {
       break;
     }
+    if(bytes_read != SERIAL_DATA_CHUNK_SIZE) {
+      // TImeout occured
+      break;
+    }
+    data = (char *) realloc(data, total_read+SERIAL_DATA_CHUNK_SIZE);
+    pos = data + total_read;
   }
-  return index;
+  return total_read;
 }
 
