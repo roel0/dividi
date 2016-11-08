@@ -12,10 +12,10 @@
 #define SERIAL_H
 
 #include "dividi.h"
-#define SERIAL_TIMEOUT                   10
+#define SERIAL_DEFAULT_TIMEOUT                   200
 
 /**
- * This function will open the communications port on LINUX
+ * Open a serial port by given port name
  *
  * @return identifier for the serial port
  *         < 0 on error
@@ -27,36 +27,27 @@ HANDLE serial_open();
 #endif
 
 /**
- * This function will close a serial port
+ * Sets the serial port in blocking or timeout
+ * mode
+ * @fd the serial port identifier
+ * @timeout_ms timeout in miliseconds, 0 for blocking
+ */
+int serial_set_timeout(HANDLE fd, int timeout_ms);
+
+/**
+ * Closes a serial port
  *
  * @serial_port the serial port handler
  */
 void serial_close(HANDLE serial_port);
 
 /**
- * This fynction will write data on a given
- * serial port
+ * Write data to a given serial port
  *
- * @serial_port the serial port
+ * @serial_port the serial port identifier
  * @data pointer to a null terminated string
  */
 int serial_write(HANDLE serial_port, char *data);
-
-/**
- * This function will read from the serial port
- * if the device has responded to a serial_write
- * with an error (this can only be used if no
- * response was expected)
- * Note: If no error is found, this error will
- * have at least SERIAL_TIMEOUT execution time
- *
- * @serial_port the serial port handler
- * @allocated buffer by the user to store
- *            the error in
- *
- * @return > 0 if an error has been read
- */
-int serial_read_error(HANDLE serial_port, char *data);
 
 /**
  * Reads an unknown amount chunks of data from a given serial port

@@ -25,7 +25,6 @@
   #include <arpa/inet.h>
   #include <sys/socket.h>
 #endif
-
 #include "serial.h"
 
 #define SERIAL_DATA_CHUNK_SIZE 512
@@ -33,13 +32,13 @@
 
 #ifdef __linux__
 /**
- * This function will allow you to set
- * attributes of the serial port
+ * Sets the attributes of the serial port
+ *
  * @fd serial port identifier
  * @speed the baudrate
  * @parity the amount of parity bits
  */
-static int set_interface_attribs (int fd, int speed, int parity)
+static int set_interface_attribs(int fd, int speed, int parity)
 {
   struct termios tty;
   int err = 0;
@@ -79,12 +78,12 @@ static int set_interface_attribs (int fd, int speed, int parity)
 }
 
 /**
- * This function will allow you to set
- * the blocking state of the serial port
+ * Sets the serial port in blocking or timeout
+ * mode
  * @fd the serial port identifier
- * @should_block boolean of blockign state
+ * @timeout_ms timeout in miliseconds, 0 for blocking
  */
-static int set_blocking (int fd, int should_block) {
+int serial_set_timeout(int fd, int timeout_ms) {
   struct termios tty;
   int err;
   memset (&tty, 0, sizeof tty);
@@ -94,9 +93,9 @@ static int set_blocking (int fd, int should_block) {
   }
   else {
     /* If we don't unset FNDELAY, VMIN and VTIME have no effect */
-    (should_block) ? fcntl(fd, F_SETFL, 0) : fcntl(fd, F_SETFL, FNDELAY);
-    tty.c_cc[VMIN]  = should_block ? 1 : 0;
-    tty.c_cc[VTIME] = SERIAL_TIMEOUT;            // 0.1 seconds read timeout
+    (!timeout_ms) ? fcntl(fd, F_SETFL, FNDELAY) : fcntl(fd, F_SETFL, 0);
+    tty.c_cc[VMIN]  = (timeout_ms) ? 0 : 1;
+    tty.c_cc[VTIME] = timeout_ms/100;            // in intervals of 0.1s
 
     if (tcsetattr (fd, TCSADRAIN, &tty) != 0) {
       perror ("error setting term attributes");;
@@ -105,8 +104,9 @@ static int set_blocking (int fd, int should_block) {
   }
   return err;
 }
+
 /**
- * This function will open the communications port on LINUX
+ * Open a serial port by given port name
  *
  * @return identifier for the serial port
  *         < 0 on error
@@ -118,7 +118,7 @@ int serial_open(char *port_name)
     if(set_interface_attribs (fd, B9600, 0) < 0) {
       fd = -1;
     }
-    else if(set_blocking (fd, 0) < 0) {
+    else if(serial_set_timeout(fd, SERIAL_DEFAULT_TIMEOUT) < 0) {
       fd = -1;
     }
   }
@@ -129,6 +129,21 @@ int serial_open(char *port_name)
   return fd;
 }
 #elif _WIN32
+void serial_set_timeout(HANDLE fd, int timeout_ms)
+{
+  COMMTIMEOUTS timeouts = {0};
+  timeouts.ReadIntervalTimeout = 0;
+  timeouts.ReadTotalTimeoutConstant = SERIAL_DEFAULT_TIMEOUT;
+  timeouts.ReadTotalTimeoutMultiplier = 0;
+  timeouts.WriteTotalTimeoutConstant = SERIAL_DEFAULT_TIMEOUT;
+  timeouts.WriteTotalTimeoutMultiplier = 0;
+  if(SetCommTimeouts(fd, &timeouts) == 0) {
+    fprintf(stderr, "SetCommTimeouts: %d\n", WSAGetLastError());
+    CloseHandle(fd);
+    return -1;
+  }
+  return 0;
+}
 /**
  * This function will allow you to set
  * attributes of the serial port on WINDOWS
@@ -157,16 +172,7 @@ static int set_interface_attribs (HANDLE serial_port, int parity, int speed)
     }
     else {
       // Set COM port timeout settings
-      timeouts.ReadIntervalTimeout = 0;
-      timeouts.ReadTotalTimeoutConstant = SERIAL_TIMEOUT;
-      timeouts.ReadTotalTimeoutMultiplier = 0;
-      timeouts.WriteTotalTimeoutConstant = SERIAL_TIMEOUT;
-      timeouts.WriteTotalTimeoutMultiplier = 0;
-      if(SetCommTimeouts(serial_port, &timeouts) == 0) {
-        fprintf(stderr, "SetCommTimeouts: %d\n", WSAGetLastError());
-        CloseHandle(serial_port);
-        err = -1;
-      }
+      err = serial_set_timeout(serial_port, SERIAL_DEFAULT_TIMEOUT);
     }
   }
   return err;
@@ -216,8 +222,7 @@ void serial_close(HANDLE serial_port)
 }
 
 /**
- * This fynction will write data on a given
- * serial port
+ * Write data to a given serial port
  *
  * @serial_port the serial port identifier
  * @data pointer to a null terminated string
@@ -235,43 +240,6 @@ int serial_write(HANDLE serial_port, char *data)
     bytes_written = -1;
   }
   return bytes_written;
-}
-
-/**
- * This function will read from the serial port
- * if the device has responded to a serial_write
- * with an error (this can only be used if no
- * response was expected)
- * Note: If no error is found, this error will
- * have at least SERIAL_TIMEOUT execution time
- *
- * @serial_port the serial port handler
- * @allocated buffer by the user to store
- *            the error in
- *
- * @return > 0 if an error has been read
- */
-int serial_read_error(HANDLE serial_port, char *data)
-{
-  char c;
-  int index = 0;
-
-#ifdef __linux__
-  while(read(serial_port, &c, 1) > 0) {
-#elif _WIN32
-  DWORD bytes_read;
-  while(ReadFile(serial_port, &c, 1, &bytes_read, NULL)) {
-    if(bytes_read != 1) {
-      break;
-    }
-#endif
-    data[index++] = c;
-    if(c == '\n') {
-      data[index] = '\0';
-      break;
-    }
-  }
-  return index;
 }
 
 /**
@@ -309,4 +277,3 @@ char *serial_read(HANDLE serial_port, int *total_bytes_read)
   *total_bytes_read = total_read;
   return data;
 }
-
