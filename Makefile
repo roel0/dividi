@@ -31,13 +31,9 @@ $(TARGET): $(OBJS)
 	-cd $(TARGET_DIR)
 	$(CC) $(CFLAGS) $(LIBS) $(addprefix $(TARGET_DIR)/, $(OBJS)) -o $(TARGET_DIR)/$(SRC_DIR)/$@
 
-
-
 serial_test:
-	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/serial_test -I$(INC_DIR) $(TEST_DIR)/serial_test.c 
+	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/serial_test -lm -I$(INC_DIR) $(TEST_DIR)/serial_test.c 
 	$(CP_VR) $(TEST_DIR)/dummy $(TARGET_DIR)/$(TEST_DIR)
-
-
 
 clean:
 	$(RM) -r  $(TARGET_DIR) 
