@@ -59,16 +59,13 @@ int serial_write(HANDLE serial_port, char *data);
 int serial_read_error(HANDLE serial_port, char *data);
 
 /**
- * This function will read from the serial port
- * until a newline is found
- * Or it will timeout
+ * Reads an unknown amount chunks of data from a given serial port
  *
- * @serial_port the serial port handler
- * @data user allocated buffer to store the
- *       to be read data in
- *
- * @return the amount of bytes read
+ * @serial_port the serial port identifier
+ * @total_bytes_read will hold the total amount of bytes
+ *                  that has been read
+ * @return pointer to the read data
  */
-int serial_read(HANDLE serial_port, char *data);
+char *serial_read(HANDLE serial_port, int *total_bytes_read);
 
 #endif

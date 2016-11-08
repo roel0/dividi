@@ -275,18 +275,19 @@ int serial_read_error(HANDLE serial_port, char *data)
 }
 
 /**
- * Reads chunks of data from a given serial port
+ * Reads an unknown amount chunks of data from a given serial port
  *
  * @serial_port the serial port identifier
- * @data location for the to be read data
- * @return the amount of bytes read
+ * @total_bytes_read will hold the total amount of bytes
+ *                  that has been read
+ * @return pointer to the read data
  */
-int serial_read(HANDLE serial_port, char *data)
+char *serial_read(HANDLE serial_port, int *total_bytes_read)
 {
   int bytes_read;
   int total_read = 0;
 
-  data = (char *) malloc(SERIAL_DATA_CHUNK_SIZE);
+  char *data = (char *) malloc(SERIAL_DATA_CHUNK_SIZE);
   char *pos = data;
   while(1) {
 #ifdef __linux__
@@ -301,9 +302,11 @@ int serial_read(HANDLE serial_port, char *data)
       // TImeout occured
       break;
     }
-    data = (char *) realloc(data, total_read+SERIAL_DATA_CHUNK_SIZE);
+    data = (char *) realloc(data, total_read+SERIAL_DATA_CHUNK_SIZE+1);
     pos = data + total_read;
   }
-  return total_read;
+  data[total_read] = '\0';
+  *total_bytes_read = total_read;
+  return data;
 }
 
