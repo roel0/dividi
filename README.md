@@ -8,6 +8,9 @@ Dividi is a server application that receives, processes and forwards TCP command
 
 ![Alt text](doc/dividi.png?raw=true "Architecture")
 
+## TODO
+* OpenSSL integration
+
 ## BUILDING
     make
     
