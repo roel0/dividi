@@ -224,18 +224,17 @@ void serial_close(HANDLE serial_port)
  */
 int serial_write(HANDLE serial_port, char *data)
 {
-  int err = 0;
+  int bytes_written;
 #ifdef __linux__
-  if(write(serial_port, data, strlen(data)) != strlen(data)) {
+  if((bytes_written = write(serial_port, data, strlen(data))) != strlen(data)) {
 #elif _WIN32
-  DWORD bytes_written;
   if(!WriteFile(serial_port,data, strlen(data), &bytes_written, NULL)) {
 #endif
     perror("Error while writing to serial port");
     serial_close(serial_port);
-    err = -1;
+    bytes_written = -1;
   }
-  return err;
+  return bytes_written;
 }
 
 /**
@@ -285,7 +284,7 @@ int serial_read_error(HANDLE serial_port, char *data)
 int serial_read(HANDLE serial_port, char *data)
 {
   int bytes_read;
-  int total_read;
+  int total_read = 0;
 
   data = (char *) malloc(SERIAL_DATA_CHUNK_SIZE);
   char *pos = data;
