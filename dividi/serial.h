@@ -20,11 +20,7 @@
  * @return identifier for the serial port
  *         < 0 on error
  */
-#ifdef __linux__
-int serial_open();
-#elif _WIN32
 HANDLE serial_open();
-#endif
 
 /**
  * Sets the serial port in blocking or timeout
@@ -32,7 +28,7 @@ HANDLE serial_open();
  * @fd the serial port identifier
  * @timeout_ms timeout in miliseconds, 0 for blocking
  */
-int serial_set_timeout(HANDLE fd, int timeout_ms);
+int serial_set_timeout(HANDLE serial_port, int timeout_ms);
 
 /**
  * Closes a serial port

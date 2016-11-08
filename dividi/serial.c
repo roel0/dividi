@@ -31,19 +31,20 @@
 #define SERIAL_DATA_MAX        50*SERIAL_DATA_CHUNK_SIZE
 
 #ifdef __linux__
+
 /**
  * Sets the attributes of the serial port
  *
- * @fd serial port identifier
+ * @serial_port serial port identifier
  * @speed the baudrate
  * @parity the amount of parity bits
  */
-static int set_interface_attribs(int fd, int speed, int parity)
+static int set_interface_attribs(HANDLE serial_port, int speed, int parity)
 {
   struct termios tty;
   int err = 0;
   memset (&tty, 0, sizeof tty);
-  if (tcgetattr (fd, &tty) != 0) {
+  if (tcgetattr (serial_port, &tty) != 0) {
     perror ("error tcgetattr - get the parameters associated with the terminal");
     err = -1;
   }
@@ -68,7 +69,7 @@ static int set_interface_attribs(int fd, int speed, int parity)
     tty.c_cflag &= ~CSTOPB;
     tty.c_cflag &= ~CRTSCTS;
 
-    if (tcsetattr (fd, TCSANOW, &tty) != 0) {
+    if (tcsetattr (serial_port, TCSANOW, &tty) != 0) {
       perror ("error tcsetattr");
       err = 1;
     }
@@ -80,24 +81,24 @@ static int set_interface_attribs(int fd, int speed, int parity)
 /**
  * Sets the serial port in blocking or timeout
  * mode
- * @fd the serial port identifier
+ * @serial_port the serial port identifier
  * @timeout_ms timeout in miliseconds, 0 for blocking
  */
-int serial_set_timeout(int fd, int timeout_ms) {
+int serial_set_timeout(HANDLE serial_port, int timeout_ms) {
   struct termios tty;
   int err;
   memset (&tty, 0, sizeof tty);
-  if (tcgetattr (fd, &tty) != 0) {
+  if (tcgetattr (serial_port, &tty) != 0) {
     perror ("error tggetattr - get the parameters associated with the terminal");
     err = -1;
   }
   else {
     /* If we don't unset FNDELAY, VMIN and VTIME have no effect */
-    (!timeout_ms) ? fcntl(fd, F_SETFL, FNDELAY) : fcntl(fd, F_SETFL, 0);
+    (!timeout_ms) ? fcntl(serial_port, F_SETFL, FNDELAY) : fcntl(serial_port, F_SETFL, 0);
     tty.c_cc[VMIN]  = (timeout_ms) ? 0 : 1;
     tty.c_cc[VTIME] = timeout_ms/100;            // in intervals of 0.1s
 
-    if (tcsetattr (fd, TCSADRAIN, &tty) != 0) {
+    if (tcsetattr (serial_port, TCSADRAIN, &tty) != 0) {
       perror ("error setting term attributes");;
       err = -1;
     }
@@ -111,25 +112,25 @@ int serial_set_timeout(int fd, int timeout_ms) {
  * @return identifier for the serial port
  *         < 0 on error
  */
-int serial_open(char *port_name)
+HANDLE serial_open(char *port_name)
 {
-  int fd = open (port_name, O_RDWR | O_NOCTTY | O_SYNC);
-  if (fd >= 0) {
-    if(set_interface_attribs (fd, B9600, 0) < 0) {
-      fd = -1;
+  HANDLE serial_port = open (port_name, O_RDWR | O_NOCTTY | O_SYNC);
+  if (serial_port >= 0) {
+    if(set_interface_attribs (serial_port, B9600, 0) < 0) {
+      serial_port = -1;
     }
-    else if(serial_set_timeout(fd, SERIAL_DEFAULT_TIMEOUT) < 0) {
-      fd = -1;
+    else if(serial_set_timeout(serial_port, SERIAL_DEFAULT_TIMEOUT) < 0) {
+      serial_port = -1;
     }
   }
   else {
     perror ("serial_open failed");
-    fd = -1;
+    serial_port = -1;
   }
-  return fd;
+  return serial_port;
 }
 #elif _WIN32
-void serial_set_timeout(HANDLE fd, int timeout_ms)
+void serial_set_timeout(HANDLE serial_port, int timeout_ms)
 {
   COMMTIMEOUTS timeouts = {0};
   timeouts.ReadIntervalTimeout = 0;
@@ -137,9 +138,9 @@ void serial_set_timeout(HANDLE fd, int timeout_ms)
   timeouts.ReadTotalTimeoutMultiplier = 0;
   timeouts.WriteTotalTimeoutConstant = SERIAL_DEFAULT_TIMEOUT;
   timeouts.WriteTotalTimeoutMultiplier = 0;
-  if(SetCommTimeouts(fd, &timeouts) == 0) {
+  if(SetCommTimeouts(serial_port, &timeouts) == 0) {
     fprintf(stderr, "SetCommTimeouts: %d\n", WSAGetLastError());
-    CloseHandle(fd);
+    CloseHandle(serial_port);
     return -1;
   }
   return 0;
