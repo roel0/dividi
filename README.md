@@ -10,6 +10,7 @@ Dividi is a server application that receives, processes and forwards TCP command
 
 ## TODO
 * OpenSSL integration
+* Automated regression test set-up
 
 ## BUILDING
     make
