@@ -276,7 +276,9 @@ static DWORD WINAPI queue_handler()
   struct s_entry *entry;
   struct s_link *link;
   int index = 0;
+  int bytes_read = 0;
   HANDLE serial_port;
+  struct s_message answer;
 
   queue_running = 1;
   while(queue_running) {
@@ -297,7 +299,14 @@ static DWORD WINAPI queue_handler()
         switch(entry->type) {
           case TYPE_SEND_AND_VALIDATE:
           case TYPE_SEND_AND_RECEIVE:
-            /*XXX TODO*/
+            answer.command = serial_read(serial_port, &bytes_read);
+            if(!bytes_read) {
+              answer.hdr.resp.errorcode = (entry->type == TYPE_SEND_AND_VALIDATE) ? VAL_NO_SERIAL_RESPONSE : ERR_SERIAL_TIMEOUT;
+            } else {
+              answer.hdr.resp.errorcode = (entry->type == TYPE_SEND_AND_VALIDATE) ? VAL_SERIAL_RESPONSE : ERR_NO_ERR;
+            }
+            answer.hdr.resp.length = bytes_read;
+            send_command(entry->conn->socket, &answer);
             break;
           case TYPE_JUST_SEND:
           default:
@@ -390,8 +399,8 @@ static int queue_add(struct s_connection *conn, struct s_message *command)
       memcpy(entry->command, start, length);
       dbg("added %s\n", entry->command);
       entry->conn = conn;
-      entry->timeout = command->u_header.s_command.timeout & TIMEOUT_BIT_MASK;
-      entry->type = command->u_header.s_command.timeout>>TYPE_BIT_POS;
+      entry->timeout = command->hdr.recv.timeout & TIMEOUT_BIT_MASK;
+      entry->type = command->hdr.recv.timeout>>TYPE_BIT_POS;
       queue[queue_index] = entry;
       queue_index = (queue_index+1) % QUEUE_SIZE;
       index++;
@@ -410,7 +419,7 @@ static int queue_add(struct s_connection *conn, struct s_message *command)
  */
 static int receive_command(int ns, struct s_message *command)
 {
-  int bytes = recv(ns, &command->u_header, sizeof(((struct s_message*)0)->u_header) , 0);
+  int bytes = recv(ns, &command->hdr, sizeof(((struct s_message*)0)->hdr) , 0);
   if(bytes < 0) {
     perror("recv failed");
     return -1;
@@ -418,12 +427,12 @@ static int receive_command(int ns, struct s_message *command)
     //conenction closed
     return -2;
   }
-  command->u_header.s_command.timeout = ntohs(command->u_header.s_command.timeout);
-  command->u_header.s_command.length = ntohs(command->u_header.s_command.length);
+  command->hdr.recv.timeout = ntohs(command->hdr.recv.timeout);
+  command->hdr.recv.length = ntohs(command->hdr.recv.length);
 
-  command->command = (char *) malloc(command->u_header.s_command.length+1);
-  bytes = recv(ns, command->command, command->u_header.s_command.length , 0);
-  command->command[command->u_header.s_command.length] = '\0';
+  command->command = (char *) malloc(command->hdr.recv.length+1);
+  bytes = recv(ns, command->command, command->hdr.recv.length , 0);
+  command->command[command->hdr.recv.length] = '\0';
   if(bytes < 0) {
     perror("recv failed");
     return -1;
@@ -431,7 +440,7 @@ static int receive_command(int ns, struct s_message *command)
     //conenction closed
     return -2;
   }
-  return command->u_header.s_command.length;
+  return command->hdr.recv.length;
 }
 
 /**
@@ -439,7 +448,7 @@ static int receive_command(int ns, struct s_message *command)
  */
 static int send_command(int ns, struct s_message *answer)
 {
-  if(send(ns, answer, sizeof(struct s_message)+answer->u_header.s_answer.length, 0)) {
+  if(send(ns, answer, sizeof(struct s_message)+answer->hdr.resp.length, 0)) {
     perror("send failed");
     return -1;
   }
