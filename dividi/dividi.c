@@ -388,7 +388,6 @@ static int queue_add(struct s_connection *conn, struct s_message *command)
   struct s_entry *entry;
   int nbr_commands = 0;
   int length = 1;
-
   dbg("adding %s\n", command->command);
   while(*index != '\0') {
     length++;
@@ -643,7 +642,11 @@ static void init_queue()
 /**
  * Application entry-point
  */
+#ifdef TEST
+int entry_point(int argc, char *argv[])
+#else
 int main(int argc, char **argv)
+#endif
 {
   struct pollfd s[MAX_LINKS];
   int index;

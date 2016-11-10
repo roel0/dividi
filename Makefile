@@ -15,7 +15,8 @@ CP_VR = cp -vr
 all:  directories $(TARGET)
 debug: CFLAGS += -DDEBUG -g
 debug: all
-test: directories serial_test
+test: CFLAGS += -DDEBUG -g
+test: directories serial_test queue_test
 
 directories:
 	@echo '### Creating build folder ###'
@@ -31,8 +32,11 @@ $(TARGET): $(OBJS)
 	-cd $(TARGET_DIR)
 	$(CC) $(CFLAGS) $(LIBS) $(addprefix $(TARGET_DIR)/, $(OBJS)) -o $(TARGET_DIR)/$(SRC_DIR)/$@
 
+queue_test:
+	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/queue_test -DTEST $(LIBS) -I$(INC_DIR) $(TEST_DIR)/queue_test.c
+
 serial_test:
-	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/serial_test -lm -I$(INC_DIR) $(TEST_DIR)/serial_test.c 
+	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/serial_test -lm -I$(INC_DIR) $(TEST_DIR)/serial_test.c
 	$(CP_VR) $(TEST_DIR)/dummy $(TARGET_DIR)/$(TEST_DIR)
 
 clean:
