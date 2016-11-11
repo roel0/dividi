@@ -547,7 +547,7 @@ static void handle_arguments(int argc, char **argv)
 {
   int c;
   int key = 0;
-  while((c = getopt(argc, argv, "scr:kh")) > 0) {
+  while((c = getopt(argc, argv, "s:c:r:k:h")) > 0) {
     switch(c) {
       case 's':
         snprintf(config_file, PATH_MAX, optarg);
@@ -700,8 +700,10 @@ static void ssl_load_certificates(SSL_CTX *ctx, char *root, char *cert, char *ke
   // Server certification
   if (!SSL_CTX_use_certificate_file(ctx, cert, SSL_FILETYPE_PEM))
     ssl_fatal("cert");
+
   if (!SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM))
     ssl_fatal("key");
+
   if (!SSL_CTX_check_private_key(ctx))
     ssl_fatal("cert/key");
 }
@@ -726,12 +728,14 @@ int main(int argc, char **argv)
   WSAStartup(MAKEWORD(1,1), &wsa_data);
 #endif
 
+  sprintf(config_file, DEFAULT_CONFIG_FILE);
   handle_arguments(argc, argv);
 
+  SSL_library_init();
   SSL_load_error_strings();
   ERR_load_BIO_strings();
   OpenSSL_add_all_algorithms();
-  ctx = SSL_CTX_new(SSLv2_server_method());
+  ctx = SSL_CTX_new(SSLv23_server_method());
   if (ctx == NULL) {
     fprintf(stderr, "Can't create ssl context\n");
     exit(-1);
@@ -740,7 +744,6 @@ int main(int argc, char **argv)
   SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
 
   atexit(destroy_everything);
-  sprintf(config_file, DEFAULT_CONFIG_FILE);
   memset(links, 0, MAX_LINKS*sizeof(struct s_link));
 
   read_config(config_file);
