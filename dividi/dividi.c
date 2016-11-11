@@ -69,7 +69,7 @@ struct s_link {
 static struct s_link links[MAX_LINKS];
 
 struct s_connection {
-  int socket;
+  SSL *socket;
   struct s_link *link;
 };
 // queue entry
@@ -83,8 +83,8 @@ struct s_entry {
 static void allocate_queue();
 static void deallocate_queue();
 static void release_queue_sem(int inc);
-static int receive_command(int ns, struct s_message *command);
-static int send_command(int ns, struct s_message *answer);
+static int receive_command(SSL *ns, struct s_message *command);
+static int send_command(SSL *ns, struct s_message *answer);
 static int queue_add(struct s_connection *conn, struct s_message *command);
 static void close_socket(int s);
 
@@ -350,6 +350,8 @@ static DWORD WINAPI connection_handler( LPVOID s_conn )
   int i;
 
   memcpy(&conn, s_conn, sizeof(struct s_connection));
+  // Thread has ownership!
+  free(s_conn);
   while(1) {
     if(receive_command(conn.socket, &command) >= 0) {
       nbr_of_commands = queue_add(&conn, &command);
@@ -370,8 +372,7 @@ static DWORD WINAPI connection_handler( LPVOID s_conn )
       break;
     }
   }
-  // Thread has ownership!
-  free(s_conn);
+  SSL_free(conn.socket);
 #ifdef __linux__
   return NULL;
 #elif _WIN32
@@ -422,9 +423,9 @@ static int queue_add(struct s_connection *conn, struct s_message *command)
 /**
  * Receive a message over a given socket
  */
-static int receive_command(int ns, struct s_message *command)
+static int receive_command(SSL *ns, struct s_message *command)
 {
-  int bytes = recv(ns, &command->hdr, sizeof(((struct s_message*)0)->hdr) , 0);
+  int bytes = SSL_read(ns, &command->hdr, sizeof(((struct s_message*)0)->hdr));
   if(bytes < 0) {
     perror("recv failed");
     return -1;
@@ -436,7 +437,7 @@ static int receive_command(int ns, struct s_message *command)
   command->hdr.recv.length = ntohs(command->hdr.recv.length);
 
   command->command = (char *) malloc(command->hdr.recv.length+1);
-  bytes = recv(ns, command->command, command->hdr.recv.length , 0);
+  bytes = SSL_read(ns, command->command, command->hdr.recv.length);
   command->command[command->hdr.recv.length] = '\0';
   if(bytes < 0) {
     perror("recv failed");
@@ -451,9 +452,9 @@ static int receive_command(int ns, struct s_message *command)
 /**
  * send a message over a given socket
  */
-static int send_command(int ns, struct s_message *answer)
+static int send_command(SSL *ns, struct s_message *answer)
 {
-  if(send(ns, answer, sizeof(struct s_message)+answer->hdr.resp.length, 0)) {
+  if(SSL_write(ns, answer, sizeof(struct s_message)+answer->hdr.resp.length)) {
     perror("send failed");
     return -1;
   }
@@ -636,7 +637,7 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
       }
 
       conn = (struct s_connection *) malloc(sizeof(struct s_connection));
-      conn->socket = ns;
+      conn->socket = ssl;
       conn->link = &links[index];
       // We pass ownership of the pointer to the thread!
       start_connection_thread(conn);
