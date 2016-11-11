@@ -52,8 +52,9 @@ int main(int argc, char *argv[])
   int total;
   struct s_connection conn;
   struct s_message command;
+  SSL ssl;
 
-  conn.socket = 1;
+  conn.socket = &ssl;
   command.command = (char *) malloc(10*NBR_OF_MESSAGES+2);
   for(i=0; i<10*NBR_OF_MESSAGES; i++) {
     command.command[i]='a';
