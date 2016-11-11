@@ -106,6 +106,10 @@ static volatile int queue_start = 0;
 
 
 static char config_file[PATH_MAX];
+static char cert_file[PATH_MAX];
+static char key_file[PATH_MAX];
+static char root_file[PATH_MAX];
+
 static volatile int dividi_running = 0;
 static volatile int queue_running = 0;
 
@@ -528,7 +532,10 @@ static void allocate_queue()
 static void print_help()
 {
   printf("Usage: dividi [OPTIONS]\n\n");
-  printf("   -c [FILE]       Set a custom path to the configuration file\n");
+  printf("   -s [FILE]       Set a custom path to the configuration file\n");
+  printf("   -r [FILE]       Set the path to the root certification\n");
+  printf("   -k [FILE]       Set the path to the private key\n");
+  printf("   -c [FILE]       Set the path to the private key\n");
 }
 
 /**
@@ -539,16 +546,30 @@ static void print_help()
 static void handle_arguments(int argc, char **argv)
 {
   int c;
-  while((c = getopt(argc, argv, "c:h")) > 0) {
+  int key = 0;
+  while((c = getopt(argc, argv, "scr:kh")) > 0) {
     switch(c) {
-      case 'c':
+      case 's':
         snprintf(config_file, PATH_MAX, optarg);
+        break;
+      case 'c':
+        snprintf(cert_file, PATH_MAX, optarg);
+        break;
+      case 'k':
+        key = 1;
+        snprintf(key_file, PATH_MAX, optarg);
+        break;
+      case 'r':
+        snprintf(root_file, PATH_MAX, optarg);
         break;
       case 'h':
       default:
         print_help();
         exit(-1);
     }
+  }
+  if(!key) {
+    sprintf(key_file, cert_file);
   }
 }
 
@@ -705,6 +726,8 @@ int main(int argc, char **argv)
   WSAStartup(MAKEWORD(1,1), &wsa_data);
 #endif
 
+  handle_arguments(argc, argv);
+
   SSL_load_error_strings();
   ERR_load_BIO_strings();
   OpenSSL_add_all_algorithms();
@@ -713,14 +736,13 @@ int main(int argc, char **argv)
     fprintf(stderr, "Can't create ssl context\n");
     exit(-1);
   }
-  ssl_load_certificates(ctx, "test.crt", "test.pem", "test.pem");
+  ssl_load_certificates(ctx, root_file, cert_file, key_file);
   SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
 
   atexit(destroy_everything);
   sprintf(config_file, DEFAULT_CONFIG_FILE);
   memset(links, 0, MAX_LINKS*sizeof(struct s_link));
 
-  handle_arguments(argc, argv);
   read_config(config_file);
   init_queue();
 
