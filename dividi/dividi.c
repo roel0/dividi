@@ -33,6 +33,12 @@
   #include <semaphore.h>
   #include <linux/limits.h>
 #endif
+#include <netinet/in.h>
+#include <openssl/crypto.h>
+#include <openssl/bio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
 #include "serial.h"
 #include "dividi.h"
 #include <getopt.h>
@@ -601,11 +607,13 @@ static void read_config(char *config_file)
  * Will check the sockets for new connection
  * requests
  */
-static int poll_sockets(struct pollfd *s, int total_links)
+static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 {
   int index;
   int ns;
   struct s_connection *conn;
+  BIO     *sbio;
+  SSL     *ssl;
 
   dbg("Polling for incoming connections\n");
   poll(s, total_links, -1);
@@ -617,7 +625,16 @@ static int poll_sockets(struct pollfd *s, int total_links)
 #elif _WIN32
         fprintf(stderr, ("accept failed with error: %d\n", WSAGetLastError());
 #endif
+        continue;
       }
+      sbio = BIO_new_socket(ns, BIO_NOCLOSE);
+      ssl = SSL_new(ctx);
+      SSL_set_bio(ssl, sbio, sbio);
+      if (SSL_accept(ssl) == -1) {
+        fprintf(stderr, "SSL setup failed\n");
+        continue;
+      }
+
       conn = (struct s_connection *) malloc(sizeof(struct s_connection));
       conn->socket = ns;
       conn->link = &links[index];
@@ -638,6 +655,34 @@ static void init_queue()
   init_queue_sem();
   start_queue_handler();
 }
+
+/**
+ * Print out SSL error
+ */
+void ssl_fatal(char *s)
+{
+  ERR_print_errors_fp(stderr);
+  fprintf(stderr, "%.30s", s);
+}
+
+/**
+ * Loads all the needed certificates for ssl
+ */
+static void ssl_load_certificates(SSL_CTX *ctx, char *root, char *cert, char *key)
+{
+  // Client verification
+  if (!SSL_CTX_load_verify_locations(ctx, root, NULL))
+    ssl_fatal("verify");
+  SSL_CTX_set_client_CA_list(ctx, SSL_load_client_CA_file(root));
+
+  // Server certification
+  if (!SSL_CTX_use_certificate_file(ctx, cert, SSL_FILETYPE_PEM))
+    ssl_fatal("cert");
+  if (!SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM))
+    ssl_fatal("key");
+  if (!SSL_CTX_check_private_key(ctx))
+    ssl_fatal("cert/key");
+}
 ////////////////////////////////////PUBLIC////////////////////////////////////////////////
 /**
  * Application entry-point
@@ -648,6 +693,7 @@ int entry_point(int argc, char *argv[])
 int main(int argc, char **argv)
 #endif
 {
+  SSL_CTX *ctx;
   struct pollfd s[MAX_LINKS];
   int index;
   struct sockaddr_in sain;
@@ -657,6 +703,17 @@ int main(int argc, char **argv)
   WSADATA wsa_data;
   WSAStartup(MAKEWORD(1,1), &wsa_data);
 #endif
+
+  SSL_load_error_strings();
+  ERR_load_BIO_strings();
+  OpenSSL_add_all_algorithms();
+  ctx = SSL_CTX_new(SSLv2_server_method());
+  if (ctx == NULL) {
+    fprintf(stderr, "Can't create ssl context\n");
+    exit(-1);
+  }
+  ssl_load_certificates(ctx, "test.crt", "test.pem", "test.pem");
+  SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
 
   atexit(destroy_everything);
   sprintf(config_file, DEFAULT_CONFIG_FILE);
@@ -701,7 +758,7 @@ int main(int argc, char **argv)
   }
   dividi_running = 1;
   while(dividi_running) {
-    if(poll_sockets(s, index) < 0) {
+    if(poll_sockets(s, index, ctx) < 0) {
       break;
     }
   }
