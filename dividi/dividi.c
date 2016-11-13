@@ -70,13 +70,13 @@ struct s_link {
 };
 static struct s_link links[MAX_LINKS];
 
-struct s_connection {
+struct s_conn {
   SSL *socket;
   struct s_link *link;
 };
 // queue entry
 struct s_entry {
-  struct s_connection *conn;
+  struct s_conn *conn;
   char *message;
 };
 
@@ -85,7 +85,7 @@ static void deallocate_queues();
 static void release_queue_sem(int queue, int inc);
 static char *receive_message(SSL *ns, int *bytes_read);
 static int send_message(SSL *ns, char *message);
-static int out_queue_add(struct s_connection *conn, char *message);
+static int out_queue_add(struct s_conn *conn, char *message);
 static void close_socket(int s);
 
 #ifdef __linux__
@@ -390,7 +390,7 @@ static void create_serial_lock()
 /**
  * Start the connection handlers thread
  */
-static void start_connection_handlers(struct s_connection *s_con)
+static void start_connection_handlers(struct s_conn *s_con)
 {
 #ifdef __linux__
   pthread_t in_tcp;
@@ -482,17 +482,17 @@ static DWORD WINAPI out_queue_handler()
  * in_tcp -> out_queue -> serial_out(out_queue_handler)
  */
 #ifdef __linux__
-static void *in_tcp_handler(void *s_conn)
+static void *in_tcp_handler(void *_conn)
 #elif _WIN32
-static DWORD WINAPI in_tcp_handler( LPVOID s_conn )
+static DWORD WINAPI in_tcp_handler( LPVOID _conn )
 #endif
 {
-  struct s_connection conn;
+  struct s_conn conn;
   int nbr_of_messages;
   char *message;
   int bytes_read;
 
-  memcpy(&conn, s_conn, sizeof(struct s_connection));
+  memcpy(&conn, _conn, sizeof(struct s_conn));
   in_tcp_running = 1;
   while(in_tcp_running) {
     message = receive_message(conn.socket, &bytes_read);
@@ -535,13 +535,14 @@ static DWORD WINAPI in_queue_handler()
       if(links[index].tcp_port == 0) {
         break;
       }
-      sleep(1);
-      lock_serial();
       message = serial_read(links[index].serial_port, &bytes_read);
-      unlock_serial();
       if(bytes_read) {
         entry = (struct s_entry*) malloc(sizeof(struct s_entry));
         entry->message = message;
+        entry->conn = (struct s_conn *) malloc(sizeof(struct s_conn));
+        entry->conn->link = (struct s_link *) malloc(sizeof(struct s_link));
+        entry->conn->link->serial_port = links[index].serial_port;
+        entry->conn->link->tcp_port = links[index].tcp_port;
         lock_queue(DIVIDI_IN_QUEUE);
         in_queue[in_queue_index] = entry;
         in_queue_index = (in_queue_index+1) % QUEUE_SIZE;
@@ -565,16 +566,16 @@ static DWORD WINAPI in_queue_handler()
  * out_tcp -> out_queue -> serial_out(out_queue_handler)
  */
 #ifdef __linux__
-static void *out_tcp_handler(void *s_conn)
+static void *out_tcp_handler(void *_conn)
 #elif _WIN32
-static DWORD WINAPI out_tcp_handler( LPVOID s_conn )
+static DWORD WINAPI out_tcp_handler( LPVOID _conn )
 #endif
 {
-  struct s_connection conn;
+  struct s_conn conn;
   struct s_link *queue_link;
   struct s_link *link;
 
-  memcpy(&conn, s_conn, sizeof(struct s_connection));
+  memcpy(&conn, _conn, sizeof(struct s_conn));
   link = conn.link;
   out_tcp_running = 1;
   while(out_tcp_running) {
@@ -602,7 +603,7 @@ static DWORD WINAPI out_tcp_handler( LPVOID s_conn )
  * @message the string containing one or more messages
  * @return the number of extracted messages
  */
-static int out_queue_add(struct s_connection *conn, char *message)
+static int out_queue_add(struct s_conn *conn, char *message)
 {
   char *index = message;
   char *start = message;
@@ -663,7 +664,7 @@ static char *receive_message(SSL *ns, int *total_bytes_read)
  */
 static int send_message(SSL *ns, char *message)
 {
-  if(SSL_write(ns, message, strlen(message))) {
+  if(!SSL_write(ns, message, strlen(message))) {
     perror("send failed");
     return -1;
   }
@@ -850,7 +851,7 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 {
   int index;
   int ns;
-  struct s_connection *conn;
+  struct s_conn *conn;
   BIO     *sbio;
   SSL     *ssl;
 
@@ -874,7 +875,7 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
         continue;
       }
 
-      conn = (struct s_connection *) malloc(sizeof(struct s_connection));
+      conn = (struct s_conn *) malloc(sizeof(struct s_conn));
       conn->socket = ssl;
       conn->link = &links[index];
       start_connection_handlers(conn);
