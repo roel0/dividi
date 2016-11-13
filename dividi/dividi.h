@@ -22,26 +22,6 @@
 #ifdef __linux__
 typedef int HANDLE;
 #endif
-#define TIMEOUT_BIT_MASK       0x7FFFF
-#define TYPE_BIT_POS           14
-#define VAL_NO_SERIAL_RESPONSE 0
-#define VAL_SERIAL_RESPONSE    1
-#define ERR_NO_ERR             0
-#define ERR_SERIAL_TIMEOUT     0xFF
 
-// message structure
-struct s_message {
-  union {
-    struct {
-      uint16_t timeout;
-      uint16_t length;
-    } recv;
-    struct {
-      uint16_t errorcode;
-      uint16_t length;
-    } resp;
-  } hdr;
-  char *command;
-};
 
 #endif
