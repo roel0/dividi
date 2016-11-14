@@ -56,14 +56,13 @@
 #define DEFAULT_CONFIG_FILE              "/etc/dividi.conf"
 #elif defined _WIN32
 #define DEAULT_CONFIG_FILE               "~/dividi.conf"
-#define poll WSAPoll
 #endif
 
 
 #define TCP_DATA_CHUNK_SIZE 512
 #define TCP_DATA_MAX        50*TCP_DATA_CHUNK_SIZE
-#define DIVIDI_IN_QUEUE  0
-#define DIVIDI_OUT_QUEUE 1
+#define DIVIDI_SERIAL2TCP_QUEUE  0
+#define DIVIDI_TCP2SERIAL_QUEUE 1
 
 // Look up table for all links
 struct s_link {
@@ -87,39 +86,39 @@ static void deallocate_queues();
 static void release_queue_sem(int queue, int inc);
 static char *receive_message(SSL *ns, int *bytes_read);
 static int send_message(SSL *ns, char *message);
-static int out_queue_add(struct s_conn *conn, char *message);
+static void tcp2serial_queue_add(struct s_conn *conn, char *message);
 static void close_socket(int s);
 
 #ifdef __linux__
-static void *in_queue_handler();
-static void *out_queue_handler();
-static void *in_tcp_handler();
-static void *out_tcp_handler();
+static void *serial_in_handler();
+static void *serial_out_handler();
+static void *tcp_in_handler();
+static void *tcp_out_handler();
 static pthread_mutex_t in_lock;
 static pthread_mutex_t serial_lock;
 static pthread_mutex_t out_lock;
-static sem_t in_queue_sem;
-static sem_t out_queue_sem;
+static sem_t serial2tcp_queue_sem;
+static sem_t tcp2serial_queue_sem;
 static sem_t thread_started_sem;
 #elif _WIN32
-static DWORD WINAPI in_queue_handler();
-static DWORD WINAPI out_queue_handler();
-static DWORD WINAPI in_tcp_handler(LPVOID lpParam);
-static DWORD WINAPI out_tcp_handler(LPVOID lpParam);
+static DWORD WINAPI serial_in_handler();
+static DWORD WINAPI serial_out_handler();
+static DWORD WINAPI tcp_in_handler(LPVOID lpParam);
+static DWORD WINAPI tcp_out_handler(LPVOID lpParam);
 static HANDLE in_lock;
 static HANDLE serial_lock;
 static HANDLE out_lock;
-static HANDLE in_queue_sem;
-static HANDLE out_queue_sem;
+static HANDLE serial2tcp_queue_sem;
+static HANDLE tcp2serial_queue_sem;
 static HANDLE thread_started_sem;
 #endif
 
-static struct s_entry **in_queue;
-static struct s_entry **out_queue;
-static volatile int in_queue_index = 0;
-static volatile int in_queue_start = 0;
-static volatile int out_queue_index = 0;
-static volatile int out_queue_start = 0;
+static struct s_entry **serial2tcp_queue;
+static struct s_entry **tcp2serial_queue;
+static volatile int serial2tcp_queue_index = 0;
+static volatile int serial2tcp_queue_start = 0;
+static volatile int tcp2serial_queue_index = 0;
+static volatile int tcp2serial_queue_start = 0;
 
 
 static char config_file[PATH_MAX];
@@ -129,8 +128,8 @@ static char root_file[PATH_MAX];
 
 static volatile int in_tcp_running = 0;
 static volatile int out_tcp_running = 0;
-static volatile int in_queue_running = 0;
-static volatile int out_queue_running = 0;
+static volatile int serial2tcp_queue_running = 0;
+static volatile int tcp2serial_queue_running = 0;
 static volatile int dividi_running = 0;
 static int total_links = 0;
 
@@ -142,8 +141,8 @@ static int total_links = 0;
 static void destroy_everything()
 {
   /* exit queue_handler thread */
-  in_queue_running = 0;
-  out_queue_running = 0;
+  serial2tcp_queue_running = 0;
+  tcp2serial_queue_running = 0;
 
   /* exit all connections */
   out_tcp_running = 0;
@@ -159,17 +158,17 @@ static void destroy_everything()
  */
 static void get_queue_sem(int queue)
 {
-  if(queue == DIVIDI_IN_QUEUE) {
+  if(queue == DIVIDI_SERIAL2TCP_QUEUE) {
 #ifdef __linux__
-    sem_wait(&in_queue_sem);
+    sem_wait(&serial2tcp_queue_sem);
 #elif _WIN32
-    WaitForSingleObject(in_queue_sem, INFINITE);
+    WaitForSingleObject(serial2tcp_queue_sem, INFINITE);
 #endif
-  } else if(queue == DIVIDI_OUT_QUEUE) {
+  } else if(queue == DIVIDI_TCP2SERIAL_QUEUE) {
 #ifdef __linux__
-    sem_wait(&out_queue_sem);
+    sem_wait(&tcp2serial_queue_sem);
 #elif _WIN32
-    WaitForSingleObject(out_queue_sem, INFINITE);
+    WaitForSingleObject(tcp2serial_queue_sem, INFINITE);
 #endif
   }
 }
@@ -183,32 +182,32 @@ static void get_queue_sem(int queue)
  */
 static void release_queue_sem(int queue, int inc)
 {
-  if(queue == DIVIDI_IN_QUEUE) {
+  if(queue == DIVIDI_SERIAL2TCP_QUEUE) {
 #ifdef __linux__
     int i;
     for(i = 0; i < inc; i++) {
-      if(sem_post(&in_queue_sem)<0) {
+      if(sem_post(&serial2tcp_queue_sem)<0) {
         perror("sem_post failed");
         exit(-1);
       }
     }
 #elif _WIN32
-    if(inc && !ReleaseSemaphore(in_queue_sem, inc, NULL)) {
+    if(inc && !ReleaseSemaphore(serial2tcp_queue_sem, inc, NULL)) {
       fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
-  } else if(queue == DIVIDI_OUT_QUEUE) {
+  } else if(queue == DIVIDI_TCP2SERIAL_QUEUE) {
 #ifdef __linux__
     int i;
     for(i = 0; i < inc; i++) {
-      if(sem_post(&out_queue_sem)<0) {
+      if(sem_post(&tcp2serial_queue_sem)<0) {
         perror("sem_post failed");
         exit(-1);
       }
     }
 #elif _WIN32
-    if(inc && !ReleaseSemaphore(out_queue_sem, inc, NULL)) {
+    if(inc && !ReleaseSemaphore(tcp2serial_queue_sem, inc, NULL)) {
       fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
@@ -256,11 +255,11 @@ static void release_thread_started_sem()
 static void init_sem()
 {
 #ifdef __linux__
-  if(sem_init(&in_queue_sem, 1, 0) < 0) {
+  if(sem_init(&serial2tcp_queue_sem, 1, 0) < 0) {
     perror("sem_init failed");
     exit(-1);
   }
-  if(sem_init(&out_queue_sem, 1, 0) < 0) {
+  if(sem_init(&tcp2serial_queue_sem, 1, 0) < 0) {
     perror("sem_init failed");
     exit(-1);
   }
@@ -269,13 +268,13 @@ static void init_sem()
     exit(-1);
   }
 #elif _WIN32
-  in_queue_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
-  if(in_queue_sem == NULL) {
+  serial2tcp_queue_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
+  if(serial2tcp_queue_sem == NULL) {
     fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
-  out_queue_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
-  if(out_queue_sem == NULL) {
+  tcp2serial_queue_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
+  if(tcp2serial_queue_sem == NULL) {
     fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
@@ -292,7 +291,7 @@ static void init_sem()
  */
 static void lock_queue(int queue)
 {
-  if(queue == DIVIDI_IN_QUEUE) {
+  if(queue == DIVIDI_SERIAL2TCP_QUEUE) {
 #ifdef __linux__
     if(pthread_mutex_lock(&in_lock) < 0) {
       perror("pthread_mutex_lock failed");
@@ -304,7 +303,7 @@ static void lock_queue(int queue)
       exit(-1);
     }
 #endif
-  } else if(queue == DIVIDI_OUT_QUEUE) {
+  } else if(queue == DIVIDI_TCP2SERIAL_QUEUE) {
 #ifdef __linux__
     if(pthread_mutex_lock(&out_lock) < 0) {
       perror("pthread_mutex_lock failed");
@@ -324,7 +323,7 @@ static void lock_queue(int queue)
  */
 static void unlock_queue(int queue)
 {
-  if(queue == DIVIDI_IN_QUEUE) {
+  if(queue == DIVIDI_SERIAL2TCP_QUEUE) {
 #ifdef __linux__
     if(pthread_mutex_unlock(&in_lock) < 0) {
       perror("pthread_mutex_lock failed");
@@ -336,7 +335,7 @@ static void unlock_queue(int queue)
       exit(-1);
     }
 #endif
-  } else if(queue == DIVIDI_OUT_QUEUE) {
+  } else if(queue == DIVIDI_TCP2SERIAL_QUEUE) {
 #ifdef __linux__
     if(pthread_mutex_unlock(&out_lock) < 0) {
       perror("pthread_mutex_lock failed");
@@ -444,16 +443,16 @@ static int start_connection_handlers(struct s_conn *conn)
   pthread_t in_tcp;
   pthread_t out_tcp;
   nbr_of_references++;
-  pthread_create( &in_tcp, NULL, in_tcp_handler, conn);
+  pthread_create( &in_tcp, NULL, tcp_in_handler, conn);
   nbr_of_references++;
-  pthread_create( &out_tcp, NULL, out_tcp_handler, conn);
+  pthread_create( &out_tcp, NULL, tcp_out_handler, conn);
 #elif _WIN32
   LPDWORD in_tcp;
   LPDWORD out_tcp;
   nbr_of_references++;
-  CreateThread(NULL, 0, in_tcp_handler, conn, 0, in_tcp);
+  CreateThread(NULL, 0, tcp_in_handler, conn, 0, in_tcp);
   nbr_of_references++;
-  CreateThread(NULL, 0, out_tcp_handler, conn, 0, out_tcp);
+  CreateThread(NULL, 0, tcp_out_handler, conn, 0, out_tcp);
 #endif
   return nbr_of_references;
 }
@@ -467,27 +466,27 @@ static void start_queues_handlers()
 #ifdef __linux__
   pthread_t in;
   pthread_t out;
-  pthread_create( &in, NULL, in_queue_handler, NULL);
-  pthread_create( &out, NULL, out_queue_handler, NULL);
+  pthread_create( &in, NULL, serial_in_handler, NULL);
+  pthread_create( &out, NULL, serial_out_handler, NULL);
 #elif _WIN32
   LPDWORD in;
   LPDWORD out;
-  CreateThread(NULL, 0, in_queue_handler, NULL, 0, in);
-  CreateThread(NULL, 0, out_queue_handler, NULL, 0, out);
+  CreateThread(NULL, 0, serial_in_handler, NULL, 0, in);
+  CreateThread(NULL, 0, serial_out_handler, NULL, 0, out);
 #endif
 }
 
 /**
- * The out_queue handler thread
+ * The tcp2serial_queue handler thread
  * The messages are threated according
  * the first in- first out principle
  *
  * out = tcp -> serial device
  */
 #ifdef __linux__
-static void *out_queue_handler()
+static void *serial_out_handler()
 #elif _WIN32
-static DWORD WINAPI out_queue_handler()
+static DWORD WINAPI serial_out_handler()
 #endif
 {
   struct s_entry *entry;
@@ -495,13 +494,13 @@ static DWORD WINAPI out_queue_handler()
   int index = 0;
   HANDLE serial_port;
 
-  out_queue_running = 1;
-  while(out_queue_running) {
-    get_queue_sem(DIVIDI_OUT_QUEUE);
-    if(out_queue_index != out_queue_start) {
-      index = out_queue_start;
-      lock_queue(DIVIDI_OUT_QUEUE);
-      entry = out_queue[index];
+  tcp2serial_queue_running = 1;
+  while(tcp2serial_queue_running) {
+    get_queue_sem(DIVIDI_TCP2SERIAL_QUEUE);
+    if(tcp2serial_queue_index != tcp2serial_queue_start) {
+      index = tcp2serial_queue_start;
+      lock_queue(DIVIDI_TCP2SERIAL_QUEUE);
+      entry = tcp2serial_queue[index];
       //Check if conn is still active
       if(entry->conn != NULL) {
         link = entry->conn->link;
@@ -516,11 +515,11 @@ static DWORD WINAPI out_queue_handler()
         dbg("Removed %s from queue\n", entry->message);
       }
 
-      out_queue_start = (out_queue_start+1) % QUEUE_SIZE;
-      unlock_queue(DIVIDI_OUT_QUEUE);
+      tcp2serial_queue_start = (tcp2serial_queue_start+1) % QUEUE_SIZE;
+      unlock_queue(DIVIDI_TCP2SERIAL_QUEUE);
     }
   }
-  out_queue_running = -1;
+  tcp2serial_queue_running = -1;
 #ifdef __linux__
   return NULL;
 #elif _WIN32
@@ -532,16 +531,15 @@ static DWORD WINAPI out_queue_handler()
  * The queue handler thread
  * The messages are threated according
  * the first in- first out principle
- * in_tcp -> out_queue -> serial_out(out_queue_handler)
+ * in_tcp -> tcp2serial_queue -> serial_out(serial_out_handler)
  */
 #ifdef __linux__
-static void *in_tcp_handler(void *_conn)
+static void *tcp_in_handler(void *_conn)
 #elif _WIN32
-static DWORD WINAPI in_tcp_handler( LPVOID _conn )
+static DWORD WINAPI tcp_in_handler( LPVOID _conn )
 #endif
 {
   struct s_conn conn;
-  int nbr_of_messages;
   char *message;
   int bytes_read;
 
@@ -551,8 +549,8 @@ static DWORD WINAPI in_tcp_handler( LPVOID _conn )
   while(in_tcp_running) {
     message = receive_message(conn.socket, &bytes_read);
     if(bytes_read) {
-      nbr_of_messages = out_queue_add(&conn, message);
-      release_queue_sem(DIVIDI_OUT_QUEUE, nbr_of_messages);
+      tcp2serial_queue_add(&conn, message);
+      release_queue_sem(DIVIDI_TCP2SERIAL_QUEUE, 1);
     }
   }
   SSL_free(conn.socket);
@@ -566,16 +564,16 @@ static DWORD WINAPI in_tcp_handler( LPVOID _conn )
 
 
 /**
- * The in_queue handler thread
+ * The serial2tcp_queue handler thread
  * The messages are threated according
  * the first in- first out principle
  *
  * in = serial device -> tcp
  */
 #ifdef __linux__
-static void *in_queue_handler()
+static void *serial_in_handler()
 #elif _WIN32
-static DWORD WINAPI in_queue_handler()
+static DWORD WINAPI serial_in_handler()
 #endif
 {
   int index = 0;
@@ -583,8 +581,8 @@ static DWORD WINAPI in_queue_handler()
   struct s_entry *entry;
   int bytes_read;
 
-  in_queue_running = 1;
-  while(in_queue_running) {
+  serial2tcp_queue_running = 1;
+  while(serial2tcp_queue_running) {
     for(index=0; index<MAX_LINKS; index++) {
       if(links[index].tcp_port == 0) {
         break;
@@ -597,15 +595,15 @@ static DWORD WINAPI in_queue_handler()
         entry->conn->link = (struct s_link *) malloc(sizeof(struct s_link));
         entry->conn->link->serial_port = links[index].serial_port;
         entry->conn->link->tcp_port = links[index].tcp_port;
-        lock_queue(DIVIDI_IN_QUEUE);
-        in_queue[in_queue_index] = entry;
-        in_queue_index = (in_queue_index+1) % QUEUE_SIZE;
-        unlock_queue(DIVIDI_IN_QUEUE);
-        release_queue_sem(DIVIDI_IN_QUEUE, total_links);
+        lock_queue(DIVIDI_SERIAL2TCP_QUEUE);
+        serial2tcp_queue[serial2tcp_queue_index] = entry;
+        serial2tcp_queue_index = (serial2tcp_queue_index+1) % QUEUE_SIZE;
+        unlock_queue(DIVIDI_SERIAL2TCP_QUEUE);
+        release_queue_sem(DIVIDI_SERIAL2TCP_QUEUE, total_links);
       }
     }
   }
-  in_queue_running = -1;
+  serial2tcp_queue_running = -1;
 #ifdef __linux__
   return NULL;
 #elif _WIN32
@@ -616,13 +614,13 @@ static DWORD WINAPI in_queue_handler()
  * The queue handler thread
  * The messages are threated according
  * the first in- first out principle
- * serial_in(in_queue_handler) -> in_queue -> tcp_out
- * out_tcp -> out_queue -> serial_out(out_queue_handler)
+ * serial_in(serial_in_handler) -> serial2tcp_queue -> tcp_out
+ * out_tcp -> tcp2serial_queue -> serial_out(serial_out_handler)
  */
 #ifdef __linux__
-static void *out_tcp_handler(void *_conn)
+static void *tcp_out_handler(void *_conn)
 #elif _WIN32
-static DWORD WINAPI out_tcp_handler( LPVOID _conn )
+static DWORD WINAPI tcp_out_handler( LPVOID _conn )
 #endif
 {
   struct s_conn conn;
@@ -634,12 +632,12 @@ static DWORD WINAPI out_tcp_handler( LPVOID _conn )
   link = conn.link;
   out_tcp_running = 1;
   while(out_tcp_running) {
-    get_queue_sem(DIVIDI_IN_QUEUE);
-    queue_link = in_queue[in_queue_start]->conn->link;
+    get_queue_sem(DIVIDI_SERIAL2TCP_QUEUE);
+    queue_link = serial2tcp_queue[serial2tcp_queue_start]->conn->link;
     if(queue_link->tcp_port == link->tcp_port)
     {
-      send_message(conn.socket, in_queue[in_queue_start]->message);
-      in_queue_start = (in_queue_start + 1) % QUEUE_SIZE;
+      send_message(conn.socket, serial2tcp_queue[serial2tcp_queue_start]->message);
+      serial2tcp_queue_start = (serial2tcp_queue_start + 1) % QUEUE_SIZE;
     }
   }
   SSL_free(conn.socket);
@@ -651,41 +649,17 @@ static DWORD WINAPI out_tcp_handler( LPVOID _conn )
 }
 
 /**
- * This function will split up multiple messages
- * and add them seperate to the queue
- * this is to prevent the serial_server from receiving
- * to much messages in a row
- * @message the string containing one or more messages
- * @return the number of extracted messages
+ * Add a receive message to
+ * the queue
  */
-static int out_queue_add(struct s_conn *conn, char *message)
+static void tcp2serial_queue_add(struct s_conn *conn, char *message)
 {
-  char *index = message;
-  char *start = message;
-  struct s_entry *entry;
-  int nbr_messages = 0;
-  int length = 1;
-  dbg("adding %s\n", message);
-  while(*index != '\0') {
-    length++;
-    index++;
-    if(*index == '\n') {
-      entry = (struct s_entry *) malloc(sizeof(struct s_entry));
-      entry->message = (char *) malloc(length+1);
-      memcpy(entry->message, start, length);
-      dbg("added %s\n", entry->message);
-      entry->conn = conn;
-      out_queue[out_queue_index] = entry;
-      out_queue_index = (out_queue_index+1) % QUEUE_SIZE;
-      index++;
-      start = index;
-      length = 1;
-      entry = NULL;
-      nbr_messages++;
-    }
-  }
+  struct s_entry *entry = (struct s_entry *) malloc(sizeof(struct s_entry));
+  entry->message = message;
+  entry->conn = conn;
+  tcp2serial_queue[tcp2serial_queue_index] = entry;
+  tcp2serial_queue_index = (tcp2serial_queue_index+1) % QUEUE_SIZE;
   dbg("added %d\n", nbr_messages);
-  return nbr_messages;
 }
 
 /**
@@ -753,21 +727,21 @@ static void close_socket(int s)
 static void deallocate_queues()
 {
   int i;
-  if(in_queue) {
+  if(serial2tcp_queue) {
     for(i = 0; i<QUEUE_SIZE; i++) {
-      if(in_queue[i] != NULL) {
-        free(in_queue[i]);
+      if(serial2tcp_queue[i] != NULL) {
+        free(serial2tcp_queue[i]);
       }
     }
-    free(in_queue);
+    free(serial2tcp_queue);
   }
-  if(out_queue) {
+  if(tcp2serial_queue) {
     for(i = 0; i<QUEUE_SIZE; i++) {
-      if(out_queue[i] != NULL) {
-        free(out_queue[i]);
+      if(tcp2serial_queue[i] != NULL) {
+        free(tcp2serial_queue[i]);
       }
     }
-    free(out_queue);
+    free(tcp2serial_queue);
   }
 }
 
@@ -777,22 +751,22 @@ static void deallocate_queues()
 static void allocate_queues()
 {
   int i,j;
-  in_queue = (struct s_entry **) malloc(QUEUE_SIZE*sizeof(struct s_entry *));
-  out_queue = (struct s_entry **) malloc(QUEUE_SIZE*sizeof(struct s_entry *));
-  if(!in_queue || !out_queue) {
+  serial2tcp_queue = (struct s_entry **) malloc(QUEUE_SIZE*sizeof(struct s_entry *));
+  tcp2serial_queue = (struct s_entry **) malloc(QUEUE_SIZE*sizeof(struct s_entry *));
+  if(!serial2tcp_queue || !tcp2serial_queue) {
     perror("malloc failed");
     exit(-1);
   }
   for(i = 0; i<QUEUE_SIZE; i++) {
-    in_queue[i] = (struct s_entry *) malloc(sizeof(struct s_entry));
-    out_queue[i] = (struct s_entry *) malloc(sizeof(struct s_entry));
-    if(!in_queue[i] || !out_queue[i]) {
+    serial2tcp_queue[i] = (struct s_entry *) malloc(sizeof(struct s_entry));
+    tcp2serial_queue[i] = (struct s_entry *) malloc(sizeof(struct s_entry));
+    if(!serial2tcp_queue[i] || !tcp2serial_queue[i]) {
       for(j = 0; j<i; j++) {
-        free(in_queue[j]);
-        free(out_queue[j]);
+        free(serial2tcp_queue[j]);
+        free(tcp2serial_queue[j]);
       }
-      free(in_queue);
-      free(out_queue);
+      free(serial2tcp_queue);
+      free(tcp2serial_queue);
       perror("malloc failed");
       exit(-1);
     }
