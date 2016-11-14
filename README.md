@@ -13,7 +13,7 @@ Dividi is a server application that receives, processes and forwards TCP command
 * Automated regression test set-up
 
 ## BUILDING
-    make
+[![Build Status](https://travis-ci.org/roel0/dividi.svg?branch=master)](https://travis-ci.org/roel0/dividi)
     
 ## USAGE
 1. Create a configuration file, for example:
