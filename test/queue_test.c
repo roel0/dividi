@@ -16,9 +16,7 @@ ssize_t send(int sockfd, const void *buf, size_t len, int flags)
 int serial_write(HANDLE serial_port, char *data)
 {
   int i;
-  printf(data);
   for(i=0; i<strlen(data)-2; i++) {
-    printf("%d , %c\n", i, data[i]);
     assert(data[i]=='a');
   }
   serial_write_calls++;
@@ -56,7 +54,6 @@ int main(int argc, char *argv[])
   index = tcp2serial_queue_index;
   conn.socket = &ssl;
   conn.link = (struct s_link *) malloc(sizeof(struct s_link));
-  printf("LINKLINK %X\n", conn.link);
   conn.link->serial_port = 1;
   message = (char **) malloc(NBR_OF_MESSAGES*sizeof(char *));
   for(j=0;j<NBR_OF_MESSAGES; j++) {
@@ -69,7 +66,6 @@ int main(int argc, char *argv[])
     tcp2serial_queue_add(&conn, message[j]);
   }
   assert(tcp2serial_queue_index == index+NBR_OF_MESSAGES);
-  printf("release\n");
   release_queue_sem(DIVIDI_TCP2SERIAL_QUEUE, NBR_OF_MESSAGES);
   sleep(1);
   assert(serial_write_calls == NBR_OF_MESSAGES);
