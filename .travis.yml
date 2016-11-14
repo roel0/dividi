@@ -3,4 +3,4 @@ script:
   - make
   - make debug
   - make test
-  - make examples
+  - make example
