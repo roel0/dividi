@@ -1,19 +1,15 @@
-#Dividi: A ComPort TCP sharing tool
+#Dividi: A ComPort TCP/SSL sharing tool
 
 ## INTRODUCTION
-Dividi is a server application that receives, processes and forwards TCP commands from clients to serial ports/devices. As a consequence:
+Dividi is a server application that receives, processes and forwards TCP commands from clients to serial ports/devices in a secure way (SSL). As a consequence:
  
 * Multiple applications can communicate with a serial port at the same time.
-* Serial ports can be accesed from remote locations
+* Serial ports can be accesed from remote locations in a secure way
 
 ![Alt text](doc/dividi.png?raw=true "Architecture")
 
-## TODO
-* OpenSSL integration
-* Automated regression test set-up
-
-## BUILDING
-    make
+## CONTINUOUS INTEGRATION
+[![Build Status](https://travis-ci.org/roel0/dividi.svg?branch=master)](https://travis-ci.org/roel0/dividi)
     
 ## USAGE
 1. Create a configuration file, for example:
@@ -26,6 +22,6 @@ Dividi is a server application that receives, processes and forwards TCP command
 2. Execute dividi
 
     ```
-    dividi -c path/to/config/file
+    dividi -s path/to/config/file
     ```    
 3. Setup your clients
