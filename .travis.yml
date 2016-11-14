@@ -10,6 +10,10 @@ script:
   - make test
   - make example
 addons:
-  apt:
-      packages:
-          libssl
+  coverity_scan:
+    project:
+      name: "roel0/dividi"
+      description: "Build submitted via Travis CI"
+    notification_email: roel.postelmans@altran.com
+    build_command:   "make && make debug"
+    branch_pattern: coverity_scan
