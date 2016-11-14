@@ -98,6 +98,7 @@ static pthread_mutex_t serial_lock;
 static pthread_mutex_t out_lock;
 static sem_t in_queue_sem;
 static sem_t out_queue_sem;
+static sem_t thread_started_sem;
 #elif _WIN32
 static DWORD WINAPI in_queue_handler( LPVOID lpParam );
 static DWORD WINAPI out_queue_handler( LPVOID lpParam );
@@ -108,6 +109,7 @@ static HANDLE serial_lock;
 static HANDLE out_lock;
 static HANDLE in_queue_sem;
 static HANDLE out_queue_sem;
+static HANDLE thread_started_sem;
 #endif
 
 static struct s_entry **in_queue;
@@ -213,9 +215,43 @@ static void release_queue_sem(int queue, int inc)
 }
 
 /**
- * Initialise the queue semaphore
+ * Block untill the thread started semaphore is
+ * incremented by inc
  */
-static void init_queues_sem()
+static void get_thread_started_sem(int inc)
+{
+  int i;
+  for(i = 0; i < inc; i++) {
+#ifdef __linux__
+    sem_wait(&thread_started_sem);
+#elif _WIN32
+    WaitForSingleObject(thread_started_sem, INFINITE);
+#endif
+  }
+}
+
+/**
+ * Increment the thread started semaphore by 1
+ */
+static void release_thread_started_sem()
+{
+#ifdef __linux__
+  if(sem_post(&thread_started_sem)<0) {
+    perror("sem_post failed");
+    exit(-1);
+  }
+#elif _WIN32
+  if(!ReleaseSemaphore(thread_started_sem, 1, NULL)) {
+    fprintf(stderr, "%s", GetLastError());
+    exit(-1);
+  }
+#endif
+}
+
+/**
+ * Initialise the semaphores
+ */
+static void init_sem()
 {
 #ifdef __linux__
   if(sem_init(&in_queue_sem, 1, 0) < 0) {
@@ -223,6 +259,10 @@ static void init_queues_sem()
     exit(-1);
   }
   if(sem_init(&out_queue_sem, 1, 0) < 0) {
+    perror("sem_init failed");
+    exit(-1);
+  }
+  if(sem_init(&thread_started_sem, 1, 0) < 0) {
     perror("sem_init failed");
     exit(-1);
   }
@@ -234,6 +274,11 @@ static void init_queues_sem()
   }
   out_queue_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
   if(out_queue_sem == NULL) {
+    fprintf(stderr, "%s", GetLastError());
+    exit(-1);
+  }
+  thread_started_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
+  if(thread_started_sem == NULL) {
     fprintf(stderr, "%s", GetLastError());
     exit(-1);
   }
@@ -390,19 +435,25 @@ static void create_serial_lock()
 /**
  * Start the connection handlers thread
  */
-static void start_connection_handlers(struct s_conn *s_con)
+static int start_connection_handlers(struct s_conn *conn)
 {
+  int nbr_of_references = 0;
 #ifdef __linux__
   pthread_t in_tcp;
   pthread_t out_tcp;
-  pthread_create( &in_tcp, NULL, in_tcp_handler, s_con);
-  pthread_create( &out_tcp, NULL, out_tcp_handler, s_con);
+  nbr_of_references++;
+  pthread_create( &in_tcp, NULL, in_tcp_handler, conn);
+  nbr_of_references++;
+  pthread_create( &out_tcp, NULL, out_tcp_handler, conn);
 #elif _WIN32
   uint32_t in_tcp;
   uint32_t out_tcp;
-  CreateThread(NULL, 0, in_tcp_handler, s_con, 0, &in_tcp);
-  CreateThread(NULL, 0, out_tcp_handler, s_con, 0, &in_tcp);
+  nbr_of_references++;
+  CreateThread(NULL, 0, in_tcp_handler, conn, 0, &in_tcp);
+  nbr_of_references++;
+  CreateThread(NULL, 0, out_tcp_handler, conn, 0, &in_tcp);
 #endif
+  return nbr_of_references;
 }
 
 /**
@@ -493,6 +544,7 @@ static DWORD WINAPI in_tcp_handler( LPVOID _conn )
   int bytes_read;
 
   memcpy(&conn, _conn, sizeof(struct s_conn));
+  release_thread_started_sem();
   in_tcp_running = 1;
   while(in_tcp_running) {
     message = receive_message(conn.socket, &bytes_read);
@@ -576,6 +628,7 @@ static DWORD WINAPI out_tcp_handler( LPVOID _conn )
   struct s_link *link;
 
   memcpy(&conn, _conn, sizeof(struct s_conn));
+  release_thread_started_sem();
   link = conn.link;
   out_tcp_running = 1;
   while(out_tcp_running) {
@@ -851,6 +904,7 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 {
   int index;
   int ns;
+  int nbr_of_references = 0;
   struct s_conn *conn;
   BIO     *sbio;
   SSL     *ssl;
@@ -876,9 +930,16 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
       }
 
       conn = (struct s_conn *) malloc(sizeof(struct s_conn));
+      if(conn == NULL) {
+        perror("malloc");
+        exit(-1);
+      }
       conn->socket = ssl;
       conn->link = &links[index];
-      start_connection_handlers(conn);
+      nbr_of_references = start_connection_handlers(conn);
+      // Wait until threads have released conn
+      get_thread_started_sem(nbr_of_references);
+      free(conn);
     }
   }
   return 0;
@@ -887,12 +948,12 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 /**
  * Initialises the queue
  */
-static void init_queues()
+static void init()
 {
   allocate_queues();
   create_queues_lock();
   create_serial_lock();
-  init_queues_sem();
+  init_sem();
   start_queues_handlers();
 }
 
@@ -965,7 +1026,7 @@ int main(int argc, char **argv)
   memset(links, 0, MAX_LINKS*sizeof(struct s_link));
 
   read_config(config_file);
-  init_queues();
+  init();
 
   for(index=0; index<MAX_LINKS; index++) {
     if(links[index].tcp_port == 0) {
