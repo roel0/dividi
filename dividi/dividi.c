@@ -16,8 +16,9 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <time.h>
-#ifdef _WIN32
+#if defined _WIN32
   #include <Winsock2.h>
+  #include "Mswsock.h"
   #include <Ws2tcpip.h>
   #include <windows.h>
   #include <tchar.h>
@@ -28,12 +29,13 @@
   #include <errno.h>
   #include <termios.h>
   #include <arpa/inet.h>
+  #include <netinet/in.h>
   #include <sys/socket.h>
   #include <pthread.h>
+  #include <poll.h>
   #include <semaphore.h>
   #include <linux/limits.h>
 #endif
-#include <netinet/in.h>
 #include <openssl/crypto.h>
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
@@ -42,7 +44,6 @@
 #include "serial.h"
 #include "dividi.h"
 #include <getopt.h>
-#include <poll.h>
 
 #define MAX_message                      100
 #define QUEUE_SIZE                       1000
@@ -53,8 +54,9 @@
 
 #ifdef __linux__
 #define DEFAULT_CONFIG_FILE              "/etc/dividi.conf"
-#elif __WIN32
+#elif defined _WIN32
 #define DEAULT_CONFIG_FILE               "~/dividi.conf"
+#define poll WSAPoll
 #endif
 
 
@@ -100,10 +102,10 @@ static sem_t in_queue_sem;
 static sem_t out_queue_sem;
 static sem_t thread_started_sem;
 #elif _WIN32
-static DWORD WINAPI in_queue_handler( LPVOID lpParam );
-static DWORD WINAPI out_queue_handler( LPVOID lpParam );
-static DWORD WINAPI in_tcp_handler( LPVOID lpParam );
-static DWORD WINAPI out_tcp_handler( LPVOID lpParam );
+static DWORD WINAPI in_queue_handler();
+static DWORD WINAPI out_queue_handler();
+static DWORD WINAPI in_tcp_handler(LPVOID lpParam);
+static DWORD WINAPI out_tcp_handler(LPVOID lpParam);
 static HANDLE in_lock;
 static HANDLE serial_lock;
 static HANDLE out_lock;
@@ -192,7 +194,7 @@ static void release_queue_sem(int queue, int inc)
     }
 #elif _WIN32
     if(inc && !ReleaseSemaphore(in_queue_sem, inc, NULL)) {
-      fprintf(stderr, "%s", GetLastError());
+      fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
@@ -207,7 +209,7 @@ static void release_queue_sem(int queue, int inc)
     }
 #elif _WIN32
     if(inc && !ReleaseSemaphore(out_queue_sem, inc, NULL)) {
-      fprintf(stderr, "%s", GetLastError());
+      fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
@@ -242,7 +244,7 @@ static void release_thread_started_sem()
   }
 #elif _WIN32
   if(!ReleaseSemaphore(thread_started_sem, 1, NULL)) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
 #endif
@@ -269,17 +271,17 @@ static void init_sem()
 #elif _WIN32
   in_queue_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
   if(in_queue_sem == NULL) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
   out_queue_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
   if(out_queue_sem == NULL) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
   thread_started_sem = CreateSemaphore(NULL, 0, MAX_SEM_COUNT, NULL);
   if(thread_started_sem == NULL) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
 #endif
@@ -298,7 +300,7 @@ static void lock_queue(int queue)
     }
 #elif _WIN32
     if(WaitForSingleObject(in_lock, INFINITE) < 0) {
-      fprintf(stderr, "%s", GetLastError());
+      fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
@@ -310,7 +312,7 @@ static void lock_queue(int queue)
     }
 #elif _WIN32
     if(WaitForSingleObject(out_lock, INFINITE) < 0) {
-      fprintf(stderr, "%s", GetLastError());
+      fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
@@ -330,7 +332,7 @@ static void unlock_queue(int queue)
     }
 #elif _WIN32
     if(!ReleaseMutex(in_lock)) {
-      fprintf(stderr, "%s", GetLastError());
+      fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
@@ -342,7 +344,7 @@ static void unlock_queue(int queue)
     }
 #elif _WIN32
     if(!ReleaseMutex(out_lock)) {
-      fprintf(stderr, "%s", GetLastError());
+      fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
@@ -366,12 +368,12 @@ static void create_queues_lock()
 #elif _WIN32
   in_lock = CreateMutex(NULL, FALSE, NULL);
   if(in_lock == NULL) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
   out_lock = CreateMutex(NULL, FALSE, NULL);
   if(out_lock == NULL) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
 #endif
@@ -388,7 +390,7 @@ static void lock_serial()
   }
 #elif _WIN32
   if(WaitForSingleObject(serial_lock, INFINITE) < 0) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
 #endif
@@ -406,7 +408,7 @@ static void unlock_serial()
   }
 #elif _WIN32
   if(!ReleaseMutex(serial_lock)) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
 #endif
@@ -425,7 +427,7 @@ static void create_serial_lock()
 #elif _WIN32
   serial_lock = CreateMutex(NULL, FALSE, NULL);
   if(serial_lock == NULL) {
-    fprintf(stderr, "%s", GetLastError());
+    fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
 #endif
@@ -446,12 +448,12 @@ static int start_connection_handlers(struct s_conn *conn)
   nbr_of_references++;
   pthread_create( &out_tcp, NULL, out_tcp_handler, conn);
 #elif _WIN32
-  uint32_t in_tcp;
-  uint32_t out_tcp;
+  LPDWORD in_tcp;
+  LPDWORD out_tcp;
   nbr_of_references++;
-  CreateThread(NULL, 0, in_tcp_handler, conn, 0, &in_tcp);
+  CreateThread(NULL, 0, in_tcp_handler, conn, 0, in_tcp);
   nbr_of_references++;
-  CreateThread(NULL, 0, out_tcp_handler, conn, 0, &in_tcp);
+  CreateThread(NULL, 0, out_tcp_handler, conn, 0, out_tcp);
 #endif
   return nbr_of_references;
 }
@@ -468,10 +470,10 @@ static void start_queues_handlers()
   pthread_create( &in, NULL, in_queue_handler, NULL);
   pthread_create( &out, NULL, out_queue_handler, NULL);
 #elif _WIN32
-  uint32_t in;
-  uint32_t out;
-  CreateThread(NULL, 0, in_queue_handler, NULL, 0, &in);
-  CreateThread(NULL, 0, out_queue_handler, NULL, 0, &out);
+  LPDWORD in;
+  LPDWORD out;
+  CreateThread(NULL, 0, in_queue_handler, NULL, 0, in);
+  CreateThread(NULL, 0, out_queue_handler, NULL, 0, out);
 #endif
 }
 
@@ -840,7 +842,7 @@ static void handle_arguments(int argc, char **argv)
     }
   }
   if(!key) {
-    sprintf(key_file, cert_file);
+    snprintf(key_file, PATH_MAX, cert_file);
   }
 }
 
@@ -853,7 +855,7 @@ static void handle_arguments(int argc, char **argv)
  */
 static void open_link(struct s_link *link, char *port_name)
 {
-  int fd = serial_open(port_name);
+  HANDLE fd = serial_open(port_name);
   if(fd < 0) {
     exit(-1);
   }
@@ -917,7 +919,7 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 #ifdef __linux__
         perror("accept failed");
 #elif _WIN32
-        fprintf(stderr, ("accept failed with error: %d\n", WSAGetLastError());
+        fprintf(stderr, "accept failed with error: %d\n", WSAGetLastError());
 #endif
         continue;
       }
@@ -1007,7 +1009,7 @@ int main(int argc, char **argv)
   WSAStartup(MAKEWORD(1,1), &wsa_data);
 #endif
 
-  sprintf(config_file, DEFAULT_CONFIG_FILE);
+  snprintf(config_file, PATH_MAX, DEFAULT_CONFIG_FILE);
   handle_arguments(argc, argv);
 
   SSL_library_init();

@@ -9,6 +9,7 @@ OBJS=$(patsubst  %.c, %.o, $(SRCS))
 CFLAGS = -Wall
 MKDIR_P = mkdir -p
 CP_VR = cp -vr
+CC = gcc
 
 .PHONY: directories clean
 
