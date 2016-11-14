@@ -378,41 +378,6 @@ static void create_queues_lock()
   }
 #endif
 }
-/**
- * Lock the serial ports
- */
-static void lock_serial()
-{
-#ifdef __linux__
-  if(pthread_mutex_lock(&serial_lock) < 0) {
-    perror("pthread_mutex_lock failed");
-    exit(-1);
-  }
-#elif _WIN32
-  if(WaitForSingleObject(serial_lock, INFINITE) < 0) {
-    fprintf(stderr, "%d", WSAGetLastError());
-    exit(-1);
-  }
-#endif
-}
-
-/**
- * Unlock the serial_ports
- */
-static void unlock_serial()
-{
-#ifdef __linux__
-  if(pthread_mutex_unlock(&serial_lock) < 0) {
-    perror("pthread_mutex_lock failed");
-    exit(-1);
-  }
-#elif _WIN32
-  if(!ReleaseMutex(serial_lock)) {
-    fprintf(stderr, "%d", WSAGetLastError());
-    exit(-1);
-  }
-#endif
-}
 
 /**
  * Initialise the serial mutex
@@ -504,12 +469,10 @@ static DWORD WINAPI serial_out_handler()
       link = entry->conn->link;
       serial_port = link->serial_port;
 
-      lock_serial();
       dbg("serial_write %s", entry->message);
       if(serial_write(serial_port, entry->message) < 0) {
         exit(-1);
       }
-      unlock_serial();
     }
     // Don't free conn! It's still used by the conenction thread
     free(entry->message);
