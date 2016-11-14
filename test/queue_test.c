@@ -16,7 +16,9 @@ ssize_t send(int sockfd, const void *buf, size_t len, int flags)
 int serial_write(HANDLE serial_port, char *data)
 {
   int i;
-  for(i=0; i<strlen(data)-1; i++) {
+  printf(data);
+  for(i=0; i<strlen(data)-2; i++) {
+    printf("%d , %c\n", i, data[i]);
     assert(data[i]=='a');
   }
   serial_write_calls++;
@@ -44,31 +46,31 @@ HANDLE serial_open()
 int main(int argc, char *argv[])
 {
   int index;
-  int i;
-  int total;
-  struct s_connection conn;
-  char *message;
+  int i,j;
+  struct s_conn conn;
+  char **message;
   SSL ssl;
 
+  init();
+  sleep(2);
+  index = tcp2serial_queue_index;
   conn.socket = &ssl;
   conn.link = (struct s_link *) malloc(sizeof(struct s_link));
-  conn.link->serial_port = 0;
-  message= (char *) malloc(10*NBR_OF_MESSAGES+2);
-  for(i=0; i<10*NBR_OF_MESSAGES; i++) {
-    message[i]='a';
-    if(i && !(i%10)) {
-      message[i]='\n';
+  printf("LINKLINK %X\n", conn.link);
+  conn.link->serial_port = 1;
+  message = (char **) malloc(NBR_OF_MESSAGES*sizeof(char *));
+  for(j=0;j<NBR_OF_MESSAGES; j++) {
+    message[j]= (char *) malloc(10+1);
+    for(i=0; i<9; i++) {
+      message[j][i]='a';
     }
+    message[j][i]='\n';
+    message[j][i+1] = '\0';
+    tcp2serial_queue_add(&conn, message[j]);
   }
-  message[i] = '\n';
-  message[i+1] = '\0';
-
-  init_queues();
-  sleep(2);
-  index = out_queue_index;
-  total=out_queue_add(&conn, message);
-  assert(out_queue_index == index+NBR_OF_MESSAGES);
-  release_queue_sem(DIVIDI_OUT_QUEUE, total);
+  assert(tcp2serial_queue_index == index+NBR_OF_MESSAGES);
+  printf("release\n");
+  release_queue_sem(DIVIDI_TCP2SERIAL_QUEUE, NBR_OF_MESSAGES);
   sleep(1);
   assert(serial_write_calls == NBR_OF_MESSAGES);
 }
