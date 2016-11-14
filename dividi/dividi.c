@@ -87,6 +87,7 @@ static void release_queue_sem(int queue, int inc);
 static char *receive_message(SSL *ns, int *bytes_read);
 static int send_message(SSL *ns, char *message);
 static void tcp2serial_queue_add(struct s_conn *conn, char *message);
+static void serial2tcp_queue_add(struct s_link *link, char *message);
 static void close_socket(int s);
 
 #ifdef __linux__
@@ -477,11 +478,9 @@ static void start_queues_handlers()
 }
 
 /**
- * The tcp2serial_queue handler thread
+ * The serial out handler thread
  * The messages are threated according
  * the first in- first out principle
- *
- * out = tcp -> serial device
  */
 #ifdef __linux__
 static void *serial_out_handler()
@@ -497,27 +496,27 @@ static DWORD WINAPI serial_out_handler()
   tcp2serial_queue_running = 1;
   while(tcp2serial_queue_running) {
     get_queue_sem(DIVIDI_TCP2SERIAL_QUEUE);
-    if(tcp2serial_queue_index != tcp2serial_queue_start) {
-      index = tcp2serial_queue_start;
-      lock_queue(DIVIDI_TCP2SERIAL_QUEUE);
-      entry = tcp2serial_queue[index];
-      //Check if conn is still active
-      if(entry->conn != NULL) {
-        link = entry->conn->link;
-        serial_port = link->serial_port;
+    index = tcp2serial_queue_start;
+    lock_queue(DIVIDI_TCP2SERIAL_QUEUE);
+    entry = tcp2serial_queue[index];
+    //Check if conn is still active
+    if(entry->conn != NULL) {
+      link = entry->conn->link;
+      serial_port = link->serial_port;
 
-        lock_serial();
-        if(serial_write(serial_port, entry->message) < 0) {
-          exit(-1);
-        }
-        unlock_serial();
-
-        dbg("Removed %s from queue\n", entry->message);
+      lock_serial();
+      dbg("serial_write %s", entry->message);
+      if(serial_write(serial_port, entry->message) < 0) {
+        exit(-1);
       }
-
-      tcp2serial_queue_start = (tcp2serial_queue_start+1) % QUEUE_SIZE;
-      unlock_queue(DIVIDI_TCP2SERIAL_QUEUE);
+      unlock_serial();
     }
+    // Don't free conn! It's still used by the conenction thread
+    free(entry->message);
+    free(entry);
+
+    tcp2serial_queue_start = (tcp2serial_queue_start+1) % QUEUE_SIZE;
+    unlock_queue(DIVIDI_TCP2SERIAL_QUEUE);
   }
   tcp2serial_queue_running = -1;
 #ifdef __linux__
@@ -531,7 +530,6 @@ static DWORD WINAPI serial_out_handler()
  * The queue handler thread
  * The messages are threated according
  * the first in- first out principle
- * in_tcp -> tcp2serial_queue -> serial_out(serial_out_handler)
  */
 #ifdef __linux__
 static void *tcp_in_handler(void *_conn)
@@ -561,8 +559,6 @@ static DWORD WINAPI tcp_in_handler( LPVOID _conn )
 #endif
 }
 
-
-
 /**
  * The serial2tcp_queue handler thread
  * The messages are threated according
@@ -577,29 +573,26 @@ static DWORD WINAPI serial_in_handler()
 #endif
 {
   int index = 0;
+  int index2 = 0;
   char *message;
-  struct s_entry *entry;
   int bytes_read;
 
   serial2tcp_queue_running = 1;
   while(serial2tcp_queue_running) {
-    for(index=0; index<MAX_LINKS; index++) {
-      if(links[index].tcp_port == 0) {
-        break;
-      }
+    for(index=0; index<total_links; index++) {
       message = serial_read(links[index].serial_port, &bytes_read);
       if(bytes_read) {
-        entry = (struct s_entry*) malloc(sizeof(struct s_entry));
-        entry->message = message;
-        entry->conn = (struct s_conn *) malloc(sizeof(struct s_conn));
-        entry->conn->link = (struct s_link *) malloc(sizeof(struct s_link));
-        entry->conn->link->serial_port = links[index].serial_port;
-        entry->conn->link->tcp_port = links[index].tcp_port;
-        lock_queue(DIVIDI_SERIAL2TCP_QUEUE);
-        serial2tcp_queue[serial2tcp_queue_index] = entry;
-        serial2tcp_queue_index = (serial2tcp_queue_index+1) % QUEUE_SIZE;
-        unlock_queue(DIVIDI_SERIAL2TCP_QUEUE);
+        serial2tcp_queue_add(&links[index], message);
+        //are other ports listening to the same serial device?
+        for(index2=0; index2<total_links; index2++) {
+          if(links[index].serial_port == links[index2].serial_port) {
+            serial2tcp_queue_add(&links[index2], message);
+          }
+        }
+        // Every socket has to distinguish for itself if the queue entry's
+        // are for him (ugly, to be improved)
         release_queue_sem(DIVIDI_SERIAL2TCP_QUEUE, total_links);
+        free(message);
       }
     }
   }
@@ -637,7 +630,13 @@ static DWORD WINAPI tcp_out_handler( LPVOID _conn )
     if(queue_link->tcp_port == link->tcp_port)
     {
       send_message(conn.socket, serial2tcp_queue[serial2tcp_queue_start]->message);
+      lock_queue(DIVIDI_SERIAL2TCP_QUEUE);
+      free(serial2tcp_queue[serial2tcp_queue_start]->message);
+      // Can free conn, doesnt hold socket
+      free(serial2tcp_queue[serial2tcp_queue_start]->conn);
+      free(serial2tcp_queue[serial2tcp_queue_start]);
       serial2tcp_queue_start = (serial2tcp_queue_start + 1) % QUEUE_SIZE;
+      lock_queue(DIVIDI_SERIAL2TCP_QUEUE);
     }
   }
   SSL_free(conn.socket);
@@ -657,9 +656,29 @@ static void tcp2serial_queue_add(struct s_conn *conn, char *message)
   struct s_entry *entry = (struct s_entry *) malloc(sizeof(struct s_entry));
   entry->message = message;
   entry->conn = conn;
+  lock_queue(DIVIDI_TCP2SERIAL_QUEUE);
   tcp2serial_queue[tcp2serial_queue_index] = entry;
   tcp2serial_queue_index = (tcp2serial_queue_index+1) % QUEUE_SIZE;
-  dbg("added %d\n", nbr_messages);
+  unlock_queue(DIVIDI_TCP2SERIAL_QUEUE);
+  dbg("added %s", message);
+}
+
+/**
+ * Add a serial message to
+ * the queue
+ */
+static void serial2tcp_queue_add(struct s_link *link, char *message)
+{
+  struct s_entry *entry = (struct s_entry *) malloc(sizeof(struct s_entry));
+  entry->conn = (struct s_conn *) malloc(sizeof(struct s_conn));
+  entry->message = (char *) malloc(strlen(message));
+  memcpy(entry->message, message, strlen(message));
+  entry->conn->link = link;
+  lock_queue(DIVIDI_SERIAL2TCP_QUEUE);
+  serial2tcp_queue[serial2tcp_queue_index] = entry;
+  serial2tcp_queue_index = (serial2tcp_queue_index+1) % QUEUE_SIZE;
+  unlock_queue(DIVIDI_SERIAL2TCP_QUEUE);
+  dbg("added %s", message);
 }
 
 /**
