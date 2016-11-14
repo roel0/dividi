@@ -16,4 +16,5 @@ addons:
       description: "Build submitted via Travis CI"
     notification_email: roel.postelmans@altran.com
     build_command:   "make && make debug"
-    branch_pattern: coverity_scan
+    branch_pattern: master
+
