@@ -31,7 +31,7 @@ directories:
 $(TARGET): $(OBJS)
 	@echo '### Linking ###'
 	-cd $(TARGET_DIR)
-	$(CC) $(CFLAGS) $(LIBS) $(addprefix $(TARGET_DIR)/, $(OBJS)) -o $(TARGET_DIR)/$(SRC_DIR)/$@
+	$(CC) $(CFLAGS) $(addprefix $(TARGET_DIR)/, $(OBJS)) -o $(TARGET_DIR)/$(SRC_DIR)/$@ $(LIBS)
 
 queue_test:
 	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/queue_test -DTEST $(LIBS) -I$(INC_DIR) $(TEST_DIR)/queue_test.c
