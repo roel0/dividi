@@ -1,2 +1,2 @@
 #COMPORT    #TCPORT
-/dev/pts/5  1100
+/dev/tty0  1100
