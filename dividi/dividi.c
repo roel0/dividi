@@ -41,8 +41,8 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#include "serial.h"
 #include "dividi.h"
+#include "serial.h"
 #include <getopt.h>
 
 #define MAX_message                      100
@@ -776,20 +776,22 @@ static void handle_arguments(int argc, char **argv)
 {
   int c;
   int key = 0;
+  int cert = 0;
   while((c = getopt(argc, argv, "s:c:r:k:h")) > 0) {
     switch(c) {
       case 's':
-        snprintf(config_file, PATH_MAX, optarg);
+        memcpy(config_file, optarg, PATH_MAX);
         break;
       case 'c':
-        snprintf(cert_file, PATH_MAX, optarg);
+        cert = 1;
+        memcpy(cert_file, optarg, PATH_MAX);
         break;
       case 'k':
         key = 1;
-        snprintf(key_file, PATH_MAX, optarg);
+        memcpy(key_file, optarg, PATH_MAX);
         break;
       case 'r':
-        snprintf(root_file, PATH_MAX, optarg);
+        memcpy(root_file, optarg, PATH_MAX);
         break;
       case 'h':
       default:
@@ -797,8 +799,8 @@ static void handle_arguments(int argc, char **argv)
         exit(-1);
     }
   }
-  if(!key) {
-    snprintf(key_file, PATH_MAX, cert_file);
+  if(!key && cert) {
+    memcpy(key_file, cert_file, PATH_MAX);
   }
 }
 
