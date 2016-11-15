@@ -1,23 +1,22 @@
 env:
   global:
-    - secure: "BBUEkynT8wYbwDJSEee1IQ"
+    secure: XTrBKRTgmlchrSS/W0+9hSwwu5Vd9txR3CWtbn6RFboS51TPNfJPzxWBW5azOG0UAT0u8n4TJ6RE5v2eKb88MLM2tQImvOuRXzqjYxEelhfm5WkO9/oYauS9PWdJb0AaS+eAzo0qN0X0W9UKEonQvsrJ5IEWbHee1NBV/usii8NLUa2aQCotdj3FoXgKSr49P1JAc1pjWyX2qhQ4ulOszeMMr8x0oEGf8PXtKx9MS6XqBbqINNRI1FKM8TImyVwism96guTTb1cvU/k2NzvpTtDr6Fw1lf1xA6BjRtZmfIwtloopPF7vQK2IdpaDHXbfK0Kb/P/stZ2ZdIo+mGf4HgTrlr2xSN4WJh5hKc0sq6RMD6h/StvRU6pG43dQXCR2Ku2OADMlyGRiMIYZEPqh/PZJzBbUnKxzm0mEJ/drp8buIdTypNbrRAFTviyTHrUhmeKpeHq6WU7sExqnAQTPJW0LhIeT7mfBL6y+ty7GXPVB2hLGz55VJwYYbGuU0wsizN5TaDoetj+mgHoyweOUkfE1GLRFTPTP+F/bTU9A7mepYEPPz9YBSzgcF+vdWLBXPX/k2QTrI7qlgRtCvvbkvQ9H8ia5thd6290ZtvjEhUwHJrFx+NA4BqJvTpDZ3c4FwkHu7CPTgvEPYidgFJs+rBWNTMs5Y3m+atm+da+6HhI=
 language: c
 compiler:
-  - gcc
-  - clang
+- gcc
+- clang
 os:
-  - linux
+- linux
 script:
-  - make
-  - make debug
-  - make test
-  - make example
+- make
+- make debug
+- make test
+- make example
 addons:
   coverity_scan:
     project:
-      name: "roel0/dividi"
-      description: "Build submitted via Travis CI"
+      name: roel0/dividi
+      description: Build submitted via Travis CI
     notification_email: roel.postelmans@altran.com
-    build_command:   "make && make debug"
+    build_command: make && make debug
     branch_pattern: master
-
