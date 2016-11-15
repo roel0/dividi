@@ -10,6 +10,7 @@ Dividi is a server application that receives, processes and forwards TCP command
 
 ## CONTINUOUS INTEGRATION
 [![Build Status](https://travis-ci.org/roel0/dividi.svg?branch=master)](https://travis-ci.org/roel0/dividi)
+[![Coverity](https://scan.coverity.com/projects/10812/badge.svg)](https://scan.coverity.com/projects/roel0-dividi)
     
 ## USAGE
 1. Create a configuration file, for example:
