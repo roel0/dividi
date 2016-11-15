@@ -28,3 +28,8 @@ Dividi is a server application that sets up a full-duplex communication pipe (SS
     dividi -s path/to/config/file
     ```    
 3. Setup your clients
+
+    1. Open a socket on the desired port
+    2. Start communicating with the serial device over that port
+    3. Profit!
+       
