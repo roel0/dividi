@@ -18,5 +18,5 @@ addons:
       name: roel0/dividi
       description: Build submitted via Travis CI
     notification_email: roel.postelmans@altran.com
-    build_command: make && make debug
+    build_command: "make -j5"
     branch_pattern: master
