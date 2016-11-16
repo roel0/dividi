@@ -72,7 +72,7 @@ struct s_link {
 static struct s_link links[MAX_LINKS];
 
 struct s_conn {
-  int tcp_socket;
+  int *tcp_socket;
   SSL *socket;
   struct s_link *link;
 };
@@ -516,7 +516,8 @@ static DWORD WINAPI tcp_in_handler( LPVOID _conn )
     }
   }
   SSL_free(conn.socket);
-  close(conn.tcp_socket);
+  close(*conn.tcp_socket);
+  free(conn.tcp_socket);
 #ifdef __linux__
   return NULL;
 #elif _WIN32
@@ -780,6 +781,10 @@ static void handle_arguments(int argc, char **argv)
   int key = 0;
   int cert = 0;
   while((c = getopt(argc, argv, "s:c:r:k:h")) > 0) {
+    if(strlen(optarg) > PATH_MAX) {
+      printf("File paths may be maximum %d characters long\n", PATH_MAX);
+      exit(-1);
+    }
     switch(c) {
       case 's':
         printf("hah %s\n", optarg);
@@ -867,7 +872,7 @@ static void read_config(char *config_file)
 static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 {
   int index;
-  int ns;
+  int *ns;
   int nbr_of_references = 0;
   int polled = 0;
   struct s_conn *conn;
@@ -879,7 +884,8 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
   if(polled > 0) {
     for(index=0; index<total_links; index++) {
       if(s[index].revents & POLLIN) {
-        if ((ns = accept(s[index].fd,NULL,NULL)) < 0) {
+        ns = (int *) malloc(sizeof(int));
+        if ((*ns = accept(s[index].fd,NULL,NULL)) < 0) {
 #ifdef __linux__
           perror("accept failed");
 #elif _WIN32
@@ -887,7 +893,7 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 #endif
           continue;
         }
-        sbio = BIO_new_socket(ns, BIO_NOCLOSE);
+        sbio = BIO_new_socket(*ns, BIO_NOCLOSE);
         ssl = SSL_new(ctx);
         SSL_set_bio(ssl, sbio, sbio);
         if (SSL_accept(ssl) == -1) {
