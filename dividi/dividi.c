@@ -893,6 +893,7 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 #elif _WIN32
           fprintf(stderr, "accept failed with error: %d\n", WSAGetLastError());
 #endif
+          free(conn);
           continue;
         }
         sbio = BIO_new_socket(conn->tcp_socket, BIO_NOCLOSE);
@@ -900,6 +901,7 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
         SSL_set_bio(ssl, sbio, sbio);
         if (SSL_accept(ssl) == -1) {
           fprintf(stderr, "SSL setup failed\n");
+          free(conn);
           continue;
         }
         conn->socket = ssl;
