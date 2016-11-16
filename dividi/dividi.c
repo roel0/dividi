@@ -72,7 +72,7 @@ struct s_link {
 static struct s_link links[MAX_LINKS];
 
 struct s_conn {
-  int *tcp_socket;
+  int tcp_socket;
   SSL *socket;
   struct s_link *link;
 };
@@ -516,8 +516,7 @@ static DWORD WINAPI tcp_in_handler( LPVOID _conn )
     }
   }
   SSL_free(conn.socket);
-  close(*conn.tcp_socket);
-  free(conn.tcp_socket);
+  close(conn.tcp_socket);
 #ifdef __linux__
   return NULL;
 #elif _WIN32
@@ -872,7 +871,6 @@ static void read_config(char *config_file)
 static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 {
   int index;
-  int *ns;
   int nbr_of_references = 0;
   int polled = 0;
   struct s_conn *conn;
@@ -884,8 +882,12 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
   if(polled > 0) {
     for(index=0; index<total_links; index++) {
       if(s[index].revents & POLLIN) {
-        ns = (int *) malloc(sizeof(int));
-        if ((*ns = accept(s[index].fd,NULL,NULL)) < 0) {
+        conn = (struct s_conn *) malloc(sizeof(struct s_conn));
+        if(conn == NULL) {
+          perror("malloc");
+          exit(-1);
+        }
+        if ((conn->tcp_socket = accept(s[index].fd,NULL,NULL)) < 0) {
 #ifdef __linux__
           perror("accept failed");
 #elif _WIN32
@@ -893,20 +895,13 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 #endif
           continue;
         }
-        sbio = BIO_new_socket(*ns, BIO_NOCLOSE);
+        sbio = BIO_new_socket(conn->tcp_socket, BIO_NOCLOSE);
         ssl = SSL_new(ctx);
         SSL_set_bio(ssl, sbio, sbio);
         if (SSL_accept(ssl) == -1) {
           fprintf(stderr, "SSL setup failed\n");
           continue;
         }
-
-        conn = (struct s_conn *) malloc(sizeof(struct s_conn));
-        if(conn == NULL) {
-          perror("malloc");
-          exit(-1);
-        }
-        conn->tcp_socket = ns;
         conn->socket = ssl;
         conn->link = &links[index];
         nbr_of_references = start_connection_handlers(conn);
