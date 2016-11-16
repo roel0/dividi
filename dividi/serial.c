@@ -84,9 +84,11 @@ static int set_interface_attribs(HANDLE serial_port, int speed, int parity)
  * @serial_port the serial port identifier
  * @timeout_ms timeout in miliseconds, 0 for blocking
  */
-int serial_set_timeout(HANDLE serial_port, int timeout_ms) {
+int serial_set_timeout(HANDLE serial_port, int timeout_ms)
+{
   struct termios tty;
-  int err;
+  int err = 0;
+  int arg = FNDELAY;
   memset (&tty, 0, sizeof tty);
   if (tcgetattr (serial_port, &tty) != 0) {
     perror ("error tggetattr - get the parameters associated with the terminal");
@@ -94,7 +96,13 @@ int serial_set_timeout(HANDLE serial_port, int timeout_ms) {
   }
   else {
     /* If we don't unset FNDELAY, VMIN and VTIME have no effect */
-    (!timeout_ms) ? fcntl(serial_port, F_SETFL, FNDELAY) : fcntl(serial_port, F_SETFL, 0);
+    if(timeout_ms) {
+      arg = 0;
+    }
+    if(fcntl(serial_port, F_SETFL, arg) == -1) {
+      perror("fcntl failed");
+      err = -1;
+    }
     tty.c_cc[VMIN]  = (timeout_ms) ? 0 : 1;
     tty.c_cc[VTIME] = timeout_ms/100;            // in intervals of 0.1s
 
@@ -117,9 +125,11 @@ HANDLE serial_open(char *port_name)
   HANDLE serial_port = open (port_name, O_RDWR | O_NOCTTY | O_SYNC);
   if (serial_port >= 0) {
     if(set_interface_attribs (serial_port, B9600, 0) < 0) {
+      close(serial_port);
       serial_port = -1;
     }
     else if(serial_set_timeout(serial_port, SERIAL_DEFAULT_TIMEOUT) < 0) {
+      close(serial_port);
       serial_port = -1;
     }
   }

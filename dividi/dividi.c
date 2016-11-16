@@ -72,6 +72,7 @@ struct s_link {
 static struct s_link links[MAX_LINKS];
 
 struct s_conn {
+  int tcp_socket;
   SSL *socket;
   struct s_link *link;
 };
@@ -515,6 +516,7 @@ static DWORD WINAPI tcp_in_handler( LPVOID _conn )
     }
   }
   SSL_free(conn.socket);
+  close(conn.tcp_socket);
 #ifdef __linux__
   return NULL;
 #elif _WIN32
@@ -555,8 +557,8 @@ static DWORD WINAPI serial_in_handler()
         // Every socket has to distinguish for itself if the queue entry's
         // are for him (ugly, to be improved)
         release_queue_sem(DIVIDI_SERIAL2TCP_QUEUE, total_links);
-        free(message);
       }
+      free(message);
     }
   }
   serial2tcp_queue_running = -1;
@@ -780,18 +782,19 @@ static void handle_arguments(int argc, char **argv)
   while((c = getopt(argc, argv, "s:c:r:k:h")) > 0) {
     switch(c) {
       case 's':
-        memcpy(config_file, optarg, PATH_MAX);
+        printf("hah %s\n", optarg);
+        memcpy(config_file, optarg, strlen(optarg));
         break;
       case 'c':
         cert = 1;
-        memcpy(cert_file, optarg, PATH_MAX);
+        memcpy(cert_file, optarg, strlen(optarg));
         break;
       case 'k':
         key = 1;
-        memcpy(key_file, optarg, PATH_MAX);
+        memcpy(key_file, optarg, strlen(optarg));
         break;
       case 'r':
-        memcpy(root_file, optarg, PATH_MAX);
+        memcpy(root_file, optarg, strlen(optarg));
         break;
       case 'h':
       default:
@@ -800,7 +803,7 @@ static void handle_arguments(int argc, char **argv)
     }
   }
   if(!key && cert) {
-    memcpy(key_file, cert_file, PATH_MAX);
+    memcpy(key_file, cert_file, strlen(optarg));
   }
 }
 
@@ -854,6 +857,7 @@ static void read_config(char *config_file)
     fprintf(stderr, " (%s)", config_file);
     exit(-1);
   }
+  fclose(fd);
 }
 
 /**
@@ -865,42 +869,49 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
   int index;
   int ns;
   int nbr_of_references = 0;
+  int polled = 0;
   struct s_conn *conn;
   BIO     *sbio;
   SSL     *ssl;
 
   dbg("Polling for incoming connections\n");
-  poll(s, total_links, -1);
-  for(index=0; index<total_links; index++) {
-    if(s[index].revents & POLLIN) {
-      if ((ns = accept(s[index].fd,NULL,NULL)) < 0) {
+  polled = poll(s, total_links, -1);
+  if(polled > 0) {
+    for(index=0; index<total_links; index++) {
+      if(s[index].revents & POLLIN) {
+        if ((ns = accept(s[index].fd,NULL,NULL)) < 0) {
 #ifdef __linux__
-        perror("accept failed");
+          perror("accept failed");
 #elif _WIN32
-        fprintf(stderr, "accept failed with error: %d\n", WSAGetLastError());
+          fprintf(stderr, "accept failed with error: %d\n", WSAGetLastError());
 #endif
-        continue;
-      }
-      sbio = BIO_new_socket(ns, BIO_NOCLOSE);
-      ssl = SSL_new(ctx);
-      SSL_set_bio(ssl, sbio, sbio);
-      if (SSL_accept(ssl) == -1) {
-        fprintf(stderr, "SSL setup failed\n");
-        continue;
-      }
+          continue;
+        }
+        sbio = BIO_new_socket(ns, BIO_NOCLOSE);
+        ssl = SSL_new(ctx);
+        SSL_set_bio(ssl, sbio, sbio);
+        if (SSL_accept(ssl) == -1) {
+          fprintf(stderr, "SSL setup failed\n");
+          continue;
+        }
 
-      conn = (struct s_conn *) malloc(sizeof(struct s_conn));
-      if(conn == NULL) {
-        perror("malloc");
-        exit(-1);
+        conn = (struct s_conn *) malloc(sizeof(struct s_conn));
+        if(conn == NULL) {
+          perror("malloc");
+          exit(-1);
+        }
+        conn->tcp_socket = ns;
+        conn->socket = ssl;
+        conn->link = &links[index];
+        nbr_of_references = start_connection_handlers(conn);
+        // Wait until threads have released conn
+        get_thread_started_sem(nbr_of_references);
+        free(conn);
       }
-      conn->socket = ssl;
-      conn->link = &links[index];
-      nbr_of_references = start_connection_handlers(conn);
-      // Wait until threads have released conn
-      get_thread_started_sem(nbr_of_references);
-      free(conn);
     }
+  } else if(polled < 0) {
+    perror("poll failed");
+    exit(-1);
   }
   return 0;
 }
@@ -1019,7 +1030,10 @@ int main(int argc, char **argv)
       exit(-1);
     }
     s[index].events = POLLIN;
-    setsockopt(s[index].fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&optval, sizeof(optval));
+    if(setsockopt(s[index].fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&optval, sizeof(optval)) < 0) {
+      perror("setsockopt failed");
+      exit(-1);
+    }
   }
   dividi_running = 1;
   total_links = index;
