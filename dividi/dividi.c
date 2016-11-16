@@ -864,6 +864,42 @@ static void read_config(char *config_file)
   fclose(fd);
 }
 
+static void open_connection(SSL_CTX *ctx, int sock, struct s_link *link)
+{
+  BIO     *sbio;
+  SSL     *ssl;
+  struct s_conn *conn = (struct s_conn *) malloc(sizeof(struct s_conn));
+  int nbr_of_references = 0;
+
+  if(conn == NULL) {
+    perror("malloc");
+    exit(-1);
+  }
+  if ((conn->tcp_socket = accept(sock, NULL, NULL)) < 0) {
+#ifdef __linux__
+    perror("accept failed");
+#elif _WIN32
+    fprintf(stderr, "accept failed with error: %d\n", WSAGetLastError());
+#endif
+    free(conn);
+    exit(-1);
+  }
+  sbio = BIO_new_socket(conn->tcp_socket, BIO_NOCLOSE);
+  ssl = SSL_new(ctx);
+  SSL_set_bio(ssl, sbio, sbio);
+  if (SSL_accept(ssl) == -1) {
+    fprintf(stderr, "SSL setup failed\n");
+    free(conn);
+    exit(-1);
+  }
+  conn->socket = ssl;
+  conn->link = link;
+  nbr_of_references = start_connection_handlers(conn);
+  // Wait until threads have copied conn
+  get_thread_started_sem(nbr_of_references);
+  free(conn);
+}
+
 /**
  * Will check the sockets for new connection
  * requests
@@ -871,45 +907,14 @@ static void read_config(char *config_file)
 static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 {
   int index;
-  int nbr_of_references = 0;
   int polled = 0;
-  struct s_conn *conn;
-  BIO     *sbio;
-  SSL     *ssl;
 
   dbg("Polling for incoming connections\n");
   polled = poll(s, total_links, -1);
   if(polled > 0) {
     for(index=0; index<total_links; index++) {
       if(s[index].revents & POLLIN) {
-        conn = (struct s_conn *) malloc(sizeof(struct s_conn));
-        if(conn == NULL) {
-          perror("malloc");
-          exit(-1);
-        }
-        if ((conn->tcp_socket = accept(s[index].fd,NULL,NULL)) < 0) {
-#ifdef __linux__
-          perror("accept failed");
-#elif _WIN32
-          fprintf(stderr, "accept failed with error: %d\n", WSAGetLastError());
-#endif
-          free(conn);
-          continue;
-        }
-        sbio = BIO_new_socket(conn->tcp_socket, BIO_NOCLOSE);
-        ssl = SSL_new(ctx);
-        SSL_set_bio(ssl, sbio, sbio);
-        if (SSL_accept(ssl) == -1) {
-          fprintf(stderr, "SSL setup failed\n");
-          free(conn);
-          continue;
-        }
-        conn->socket = ssl;
-        conn->link = &links[index];
-        nbr_of_references = start_connection_handlers(conn);
-        // Wait until threads have released conn
-        get_thread_started_sem(nbr_of_references);
-        free(conn);
+        open_connection(ctx, s[index].fd, &links[index]);
       }
     }
   } else if(polled < 0) {
