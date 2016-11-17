@@ -96,9 +96,9 @@ static void *serial_in_handler();
 static void *serial_out_handler();
 static void *tcp_in_handler();
 static void *tcp_out_handler();
-static pthread_mutex_t in_lock;
+static pthread_mutex_t serial2tcp_queue_lock;
 static pthread_mutex_t serial_lock;
-static pthread_mutex_t out_lock;
+static pthread_mutex_t tcp2serial_queue_lock;
 static sem_t serial2tcp_queue_sem;
 static sem_t tcp2serial_queue_sem;
 static sem_t thread_started_sem;
@@ -107,9 +107,9 @@ static DWORD WINAPI serial_in_handler();
 static DWORD WINAPI serial_out_handler();
 static DWORD WINAPI tcp_in_handler(LPVOID lpParam);
 static DWORD WINAPI tcp_out_handler(LPVOID lpParam);
-static HANDLE in_lock;
+static HANDLE serial2tcp_queue_lock;
 static HANDLE serial_lock;
-static HANDLE out_lock;
+static HANDLE tcp2serial_queue_lock;
 static HANDLE serial2tcp_queue_sem;
 static HANDLE tcp2serial_queue_sem;
 static HANDLE thread_started_sem;
@@ -295,24 +295,24 @@ static void lock_queue(int queue)
 {
   if(queue == DIVIDI_SERIAL2TCP_QUEUE) {
 #ifdef __linux__
-    if(pthread_mutex_lock(&in_lock) < 0) {
+    if(pthread_mutex_lock(&serial2tcp_queue_lock) < 0) {
       perror("pthread_mutex_lock failed");
       exit(-1);
     }
 #elif _WIN32
-    if(WaitForSingleObject(in_lock, INFINITE) < 0) {
+    if(WaitForSingleObject(serial2tcp_queue_lock, INFINITE) < 0) {
       fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
   } else if(queue == DIVIDI_TCP2SERIAL_QUEUE) {
 #ifdef __linux__
-    if(pthread_mutex_lock(&out_lock) < 0) {
+    if(pthread_mutex_lock(&tcp2serial_queue_lock) < 0) {
       perror("pthread_mutex_lock failed");
       exit(-1);
     }
 #elif _WIN32
-    if(WaitForSingleObject(out_lock, INFINITE) < 0) {
+    if(WaitForSingleObject(tcp2serial_queue_lock, INFINITE) < 0) {
       fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
@@ -327,24 +327,24 @@ static void unlock_queue(int queue)
 {
   if(queue == DIVIDI_SERIAL2TCP_QUEUE) {
 #ifdef __linux__
-    if(pthread_mutex_unlock(&in_lock) < 0) {
+    if(pthread_mutex_unlock(&serial2tcp_queue_lock) < 0) {
       perror("pthread_mutex_lock failed");
       exit(-1);
     }
 #elif _WIN32
-    if(!ReleaseMutex(in_lock)) {
+    if(!ReleaseMutex(serial2tcp_queue_lock)) {
       fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
 #endif
   } else if(queue == DIVIDI_TCP2SERIAL_QUEUE) {
 #ifdef __linux__
-    if(pthread_mutex_unlock(&out_lock) < 0) {
+    if(pthread_mutex_unlock(&tcp2serial_queue_lock) < 0) {
       perror("pthread_mutex_lock failed");
       exit(-1);
     }
 #elif _WIN32
-    if(!ReleaseMutex(out_lock)) {
+    if(!ReleaseMutex(tcp2serial_queue_lock)) {
       fprintf(stderr, "%d", WSAGetLastError());
       exit(-1);
     }
@@ -358,22 +358,22 @@ static void unlock_queue(int queue)
 static void create_queues_lock()
 {
 #ifdef __linux__
-  if(pthread_mutex_init(&in_lock, NULL) != 0) {
+  if(pthread_mutex_init(&serial2tcp_queue_lock, NULL) != 0) {
     perror("phthread_mutex_init failed");
     exit(-1);
   }
-  if(pthread_mutex_init(&out_lock, NULL) != 0) {
+  if(pthread_mutex_init(&tcp2serial_queue_lock, NULL) != 0) {
     perror("phthread_mutex_init failed");
     exit(-1);
   }
 #elif _WIN32
-  in_lock = CreateMutex(NULL, FALSE, NULL);
-  if(in_lock == NULL) {
+  serial2tcp_queue_lock = CreateMutex(NULL, FALSE, NULL);
+  if(serial2tcp_queue_lock == NULL) {
     fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
-  out_lock = CreateMutex(NULL, FALSE, NULL);
-  if(out_lock == NULL) {
+  tcp2serial_queue_lock = CreateMutex(NULL, FALSE, NULL);
+  if(tcp2serial_queue_lock == NULL) {
     fprintf(stderr, "%d", WSAGetLastError());
     exit(-1);
   }
@@ -786,7 +786,6 @@ static void handle_arguments(int argc, char **argv)
     }
     switch(c) {
       case 's':
-        printf("hah %s\n", optarg);
         memcpy(config_file, optarg, strlen(optarg));
         break;
       case 'c':
@@ -822,6 +821,7 @@ static void open_link(struct s_link *link, char *port_name)
 {
   HANDLE fd = serial_open(port_name);
   if(fd < 0) {
+    perror("serial_open failed");
     exit(-1);
   }
   dbg("Opened %s\n", port_name);
@@ -868,8 +868,8 @@ static void open_connection(SSL_CTX *ctx, int sock, struct s_link *link)
 {
   BIO     *sbio;
   SSL     *ssl;
-  struct s_conn *conn = (struct s_conn *) malloc(sizeof(struct s_conn));
   int nbr_of_references = 0;
+  struct s_conn *conn = (struct s_conn *) malloc(sizeof(struct s_conn));
 
   if(conn == NULL) {
     perror("malloc");
@@ -920,6 +920,8 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
   } else if(polled < 0) {
     perror("poll failed");
     exit(-1);
+  } else {
+    dbg("Poll timed out, no incoming connections\n");
   }
   return 0;
 }
