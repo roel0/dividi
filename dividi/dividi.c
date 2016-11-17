@@ -763,10 +763,10 @@ static void allocate_queues()
 static void print_help()
 {
   printf("Usage: dividi [OPTIONS]\n\n");
-  printf("   -s [FILE]       Set a custom path to the configuration file\n");
-  printf("   -r [FILE]       Set the path to the root certification\n");
-  printf("   -k [FILE]       Set the path to the private key\n");
-  printf("   -c [FILE]       Set the path to the private key\n");
+  printf("   -c/--config [FILE]       Set a custom path to the configuration file\n");
+  printf("   -r/--rootca     [FILE]       Set the path to the root certification\n");
+  printf("   -k/--key        [FILE]       Set the path to the private key\n");
+  printf("   -s/--servercert [FILE]       Set the path to the server certification\n");
 }
 
 /**
@@ -779,16 +779,25 @@ static void handle_arguments(int argc, char **argv)
   int c;
   int key = 0;
   int cert = 0;
-  while((c = getopt(argc, argv, "s:c:r:k:h")) > 0) {
+  int long_index =0;
+  static struct option long_options[] = {
+    {"conf",       required_argument, 0,  'c' },
+    {"servercert", required_argument, 0,  's' },
+    {"rootca",     required_argument, 0,  'r' },
+    {"key",        required_argument, 0,  'k' },
+    {0,            0,                 0,   0  }
+  };
+  while ((c = getopt_long(argc, argv,"c:s:r:k:",
+                   long_options, &long_index)) != -1) {
     if(strlen(optarg) > PATH_MAX) {
       printf("File paths may be maximum %d characters long\n", PATH_MAX);
       exit(-1);
     }
     switch(c) {
-      case 's':
+      case 'c':
         memcpy(config_file, optarg, strlen(optarg));
         break;
-      case 'c':
+      case 's':
         cert = 1;
         memcpy(cert_file, optarg, strlen(optarg));
         break;
