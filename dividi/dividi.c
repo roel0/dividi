@@ -789,7 +789,7 @@ static void handle_arguments(int argc, char **argv)
   };
   while ((c = getopt_long(argc, argv,"c:s:r:k:",
                    long_options, &long_index)) != -1) {
-    if(strlen(optarg) > PATH_MAX) {
+    if(optarg != NULL && strlen(optarg) > PATH_MAX) {
       printf("File paths may be maximum %d characters long\n", PATH_MAX);
       exit(-1);
     }
