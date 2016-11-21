@@ -11,6 +11,9 @@
 #ifndef __DIVIDI_H__
 #define __DIVIDI_H__
 
+#if defined _WIN32
+  #include <windows.h>
+#endif
 #include "serial.h"
 
 #ifdef DEBUG

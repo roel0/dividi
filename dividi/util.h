@@ -11,6 +11,9 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 
+#ifdef _WIN32
+char* strsep(char** stringp, const char* delim);
+#endif
 /*
  * Trim whitespace and newlines from a string
  */

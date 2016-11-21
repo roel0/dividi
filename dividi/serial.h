@@ -15,7 +15,12 @@
 
 #ifdef __linux__
 typedef int HANDLE;
+#elif defined _WIN32
+#undef PARITY_EVEN
+#undef PARITY_NONE
+#undef PARITY_ODD
 #endif
+
 
 enum e_flow {
   FLOW_NONE,
@@ -27,7 +32,7 @@ enum e_flow {
 enum e_parity {
   PARITY_NONE,
   PARITY_ODD,
-  PARITY_EVEN,
+  PARITY_EVEN
 };
 
 struct s_serial {
