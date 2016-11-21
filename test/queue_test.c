@@ -1,3 +1,4 @@
+#include <util.c>
 #include "dividi.c"
 
 #include <assert.h>
@@ -54,7 +55,7 @@ int main(int argc, char *argv[])
   index = tcp2serial_queue_index;
   conn.socket = &ssl;
   conn.link = (struct s_link *) malloc(sizeof(struct s_link));
-  conn.link->serial_port = 1;
+  conn.link->serial.serial_port = 1;
   message = (char **) malloc(NBR_OF_MESSAGES*sizeof(char *));
   for(j=0;j<NBR_OF_MESSAGES; j++) {
     message[j]= (char *) malloc(10+1);

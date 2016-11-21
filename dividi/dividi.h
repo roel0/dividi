@@ -11,6 +11,8 @@
 #ifndef __DIVIDI_H__
 #define __DIVIDI_H__
 
+#include "serial.h"
+
 #ifdef DEBUG
 #define dbg(fmt, ...) \
           do { fprintf(stderr, "%s:%d:%s(): " \
@@ -19,9 +21,23 @@
 #define dbg(...) do { }while(0)
 #endif
 
-#ifdef __linux__
-typedef int HANDLE;
-#endif
 
+// Look up table for all links
+struct s_link {
+  int tcp_port;
+  struct s_serial serial;
+};
+
+/**
+ * Add a link to the look up table
+ */
+struct s_link * add_link(char *serial_port, char *tcp_port);
+
+/**
+ * Set file paths
+ */
+void set_root_file(char *value);
+void set_key_file(char *value);
+void set_cert_file(char *value);
 
 #endif

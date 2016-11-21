@@ -8,11 +8,39 @@
  * Authors: Roel Postelmans
  *
  ****************************************************************************/
-#ifndef SERIAL_H
-#define SERIAL_H
+#ifndef __SERIAL_H__
+#define __SERIAL_H__
 
-#include "dividi.h"
 #define SERIAL_DEFAULT_TIMEOUT                   200
+
+#ifdef __linux__
+typedef int HANDLE;
+#endif
+
+enum e_flow {
+  FLOW_NONE,
+  FLOW_XON_XOFF,
+  FLOW_RTS_CTS,
+  FLOW_DSR_DTR
+};
+
+enum e_parity {
+  PARITY_NONE,
+  PARITY_ODD,
+  PARITY_EVEN,
+  PARITY_MARK,
+  PARITY_SPACE
+};
+
+struct s_serial {
+  HANDLE serial_port;
+  int timeout;
+  int baudrate;
+  int data_bits;
+  int stop_bits;
+  enum e_parity parity;
+  enum e_flow flow;
+};
 
 /**
  * Open a serial port by given port name

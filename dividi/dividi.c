@@ -43,6 +43,7 @@
 
 #include "dividi.h"
 #include "serial.h"
+#include "util.h"
 #include <getopt.h>
 
 #define MAX_message                      100
@@ -64,11 +65,6 @@
 #define DIVIDI_SERIAL2TCP_QUEUE  0
 #define DIVIDI_TCP2SERIAL_QUEUE 1
 
-// Look up table for all links
-struct s_link {
-  int tcp_port;
-  HANDLE serial_port;
-};
 static struct s_link links[MAX_LINKS];
 
 struct s_conn {
@@ -91,6 +87,7 @@ static void tcp2serial_queue_add(struct s_conn *conn, char *message);
 static void serial2tcp_queue_add(struct s_link *link, char *message);
 static void close_socket(int s);
 
+static int get_empty_link_slot();
 #ifdef __linux__
 static void *serial_in_handler();
 static void *serial_out_handler();
@@ -468,7 +465,7 @@ static DWORD WINAPI serial_out_handler()
     //Check if conn is still active
     if(entry->conn != NULL) {
       link = entry->conn->link;
-      serial_port = link->serial_port;
+      serial_port = link->serial.serial_port;
 
       dbg("serial_write %s", entry->message);
       if(serial_write(serial_port, entry->message) < 0) {
@@ -545,12 +542,12 @@ static DWORD WINAPI serial_in_handler()
   serial2tcp_queue_running = 1;
   while(serial2tcp_queue_running) {
     for(index=0; index<total_links; index++) {
-      message = serial_read(links[index].serial_port, &bytes_read);
+      message = serial_read(links[index].serial.serial_port, &bytes_read);
       if(bytes_read) {
         serial2tcp_queue_add(&links[index], message);
         //are other ports listening to the same serial device?
         for(index2=0; index2<total_links; index2++) {
-          if(links[index].serial_port == links[index2].serial_port) {
+          if(links[index].serial.serial_port == links[index2].serial.serial_port) {
             serial2tcp_queue_add(&links[index2], message);
           }
         }
@@ -756,7 +753,18 @@ static void allocate_queues()
     }
   }
 }
-
+void set_cert_file(char *value)
+{
+  copy_file_path(cert_file, value);
+}
+void set_key_file(char *value)
+{
+  copy_file_path(key_file, value);
+}
+void set_root_file(char *value)
+{
+  copy_file_path(root_file, value);
+}
 /**
  * Print usage
  */
@@ -834,7 +842,28 @@ static void open_link(struct s_link *link, char *port_name)
     exit(-1);
   }
   dbg("Opened %s\n", port_name);
-  link->serial_port = fd;
+  link->serial.serial_port = fd;
+}
+
+struct s_link * add_link(char *serial_port, char *tcp_port)
+{
+  int index = get_empty_link_slot();
+
+  dbg("Adding link (serial: %s, tcp: %s)\n", serial_port, tcp_port);
+  links[index].tcp_port = atoi(tcp_port);
+  open_link(&links[index], serial_port);
+  return &links[index];
+}
+
+static int get_empty_link_slot()
+{
+  int i;
+  for(i = 0; i < MAX_LINKS; i++) {
+    if(links[i].tcp_port == 0) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 /**
