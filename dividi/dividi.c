@@ -849,6 +849,10 @@ struct s_link * add_link(char *serial_port, char *tcp_port)
 {
   int index = get_empty_link_slot();
 
+  if(index < 0) {
+    fprintf(stderr, "MAX_LINKS exceeded\n");
+    exit(-1);
+  }
   dbg("Adding link (serial: %s, tcp: %s)\n", serial_port, tcp_port);
   links[index].tcp_port = atoi(tcp_port);
   open_link(&links[index], serial_port);
