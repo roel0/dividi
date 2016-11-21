@@ -41,6 +41,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+#include "conf.h"
 #include "dividi.h"
 #include "serial.h"
 #include "util.h"
@@ -543,10 +544,13 @@ static DWORD WINAPI serial_in_handler()
   while(serial2tcp_queue_running) {
     for(index=0; index<total_links; index++) {
       message = serial_read(links[index].serial.serial_port, &bytes_read);
-      if(bytes_read) {
+      if(bytes_read > 0) {
         serial2tcp_queue_add(&links[index], message);
         //are other ports listening to the same serial device?
         for(index2=0; index2<total_links; index2++) {
+          if(index2 == index) {
+            continue;
+          }
           if(links[index].serial.serial_port == links[index2].serial.serial_port) {
             serial2tcp_queue_add(&links[index2], message);
           }
@@ -598,7 +602,7 @@ static DWORD WINAPI tcp_out_handler( LPVOID _conn )
       free(serial2tcp_queue[serial2tcp_queue_start]->conn);
       free(serial2tcp_queue[serial2tcp_queue_start]);
       serial2tcp_queue_start = (serial2tcp_queue_start + 1) % QUEUE_SIZE;
-      lock_queue(DIVIDI_SERIAL2TCP_QUEUE);
+      unlock_queue(DIVIDI_SERIAL2TCP_QUEUE);
     }
   }
   SSL_free(conn.socket);
@@ -836,7 +840,7 @@ static void handle_arguments(int argc, char **argv)
  */
 static void open_link(struct s_link *link, char *port_name)
 {
-  HANDLE fd = serial_open(port_name);
+  HANDLE fd = serial_open(port_name, &link->serial);
   if(fd < 0) {
     perror("serial_open failed");
     exit(-1);
@@ -864,46 +868,11 @@ static int get_empty_link_slot()
   int i;
   for(i = 0; i < MAX_LINKS; i++) {
     if(links[i].tcp_port == 0) {
+      memset(&links[i].serial, 0, sizeof(struct s_serial));
       return i;
     }
   }
   return -1;
-}
-
-/**
- * Read the configuration file
- * and create the s_link lookup table
- *
- * @config_file path to the configuration file
- */
-static void read_config(char *config_file)
-{
-  FILE* fd;
-  int index = 0;
-  char line[MAX_LINE];
-  char com_port[MAX_LINE];
-
-  dbg("Reading configuration file %s\n", config_file);
-  fd = fopen(config_file,"rt");
-  if (fd) {
-    while(fgets(line, MAX_LINE, fd) != NULL && index < MAX_LINKS) {
-      if (strncmp(line, "#", 1) != 0) {
-        sscanf (line, "%s %d", com_port, &links[index].tcp_port);
-        open_link(&links[index], com_port);
-        index++;
-      }
-    }
-  }
-  else {
-    perror("fopen failed");
-    exit(-1);
-  }
-  if(!index) {
-    fprintf(stderr, "No configured links in the configuration file");
-    fprintf(stderr, " (%s)", config_file);
-    exit(-1);
-  }
-  fclose(fd);
 }
 
 static void open_connection(SSL_CTX *ctx, int sock, struct s_link *link)
@@ -1048,7 +1017,7 @@ int main(int argc, char **argv)
   atexit(destroy_everything);
   memset(links, 0, MAX_LINKS*sizeof(struct s_link));
 
-  read_config(config_file);
+  conf_parse(config_file);
   init();
 
   for(index=0; index<MAX_LINKS; index++) {

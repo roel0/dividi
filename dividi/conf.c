@@ -26,6 +26,7 @@ static struct s_link *active_link = NULL;
  */
 static int conf_parse_link_settings(char *key, char *value)
 {
+  dbg("Config link: %s=%s\n", key, value);
   if(strcmp(key, "timeout") == 0) {
     active_link->serial.timeout = atoi(value);
   } else if(strcmp(key, "baudrate") == 0) {
@@ -34,6 +35,8 @@ static int conf_parse_link_settings(char *key, char *value)
     active_link->serial.data_bits = atoi(value);
   } else if(strcmp(key, "stop_bits") == 0) {
     active_link->serial.stop_bits = atoi(value);
+  } else if(strcmp(key, "auto_conf") == 0) {
+    active_link->serial.auto_conf = atoi(value);
   } else if(strcmp(key, "parity") == 0) {
     //XXX
   } else if(strcmp(key, "flow") == 0) {
@@ -49,6 +52,7 @@ static int conf_parse_link_settings(char *key, char *value)
  */
 static int conf_parse_settings(char *key, char *value)
 {
+  dbg("Config settings: %s=%s\n", key, value);
   if(strcmp(key, "cert") == 0) {
     set_cert_file(value);
   } else if(strcmp(key, "key") == 0) {

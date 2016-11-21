@@ -1,2 +1,5 @@
 #COMPORT    #TCPORT
-/dev/tty0  1100
+[/dev/ttyS10:1100]
+auto_conf = 0
+timeout=200
+baudrate = 9600

@@ -13,7 +13,10 @@ int main(int argc, char *argv[])
   int bytes_written;
   int file_length;
   int i;
+  struct s_serial serial;
   int fd = open("test/dummy/serial.io", O_RDWR);
+
+  memset(&serial, 0, sizeof(struct s_serial));
 
   assert(fd > 0);
   file_length = lseek(fd, 0, SEEK_END);
@@ -30,7 +33,7 @@ int main(int argc, char *argv[])
   assert(bytes_written == file_length);
   close(fd);
 
-  fd = serial_open("/dev/ttyS11");
+  fd = serial_open("/dev/ttyS11", &serial);
   // Serial port timeout test
   struct timeval tval_before, tval_after, tval_result;
   for(i = 500; i<5000; i+=500) {

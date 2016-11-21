@@ -1,4 +1,5 @@
-#include <util.c>
+#include "util.c"
+#include "conf.c"
 #include "dividi.c"
 
 #include <assert.h>

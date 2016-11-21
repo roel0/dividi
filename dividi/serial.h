@@ -28,8 +28,6 @@ enum e_parity {
   PARITY_NONE,
   PARITY_ODD,
   PARITY_EVEN,
-  PARITY_MARK,
-  PARITY_SPACE
 };
 
 struct s_serial {
@@ -38,6 +36,7 @@ struct s_serial {
   int baudrate;
   int data_bits;
   int stop_bits;
+  int auto_conf;
   enum e_parity parity;
   enum e_flow flow;
 };

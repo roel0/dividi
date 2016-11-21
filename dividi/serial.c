@@ -33,27 +33,52 @@
 #ifdef __linux__
 
 /**
+ * Convert a baudrate in integer format
+ * to the constant format
+ */
+static int rate_to_constant(int baudrate)
+{
+#define B(x) case x: return B##x
+  switch(baudrate) {
+    B(50);     B(75);     B(110);    B(134);    B(150);
+    B(200);    B(300);    B(600);    B(1200);   B(1800);
+    B(2400);   B(4800);   B(9600);   B(19200);  B(38400);
+    B(57600);  B(115200); B(230400); B(460800); B(500000);
+    B(576000); B(921600); B(1000000);B(1152000);B(1500000);
+  default: return 0;
+  }
+#undef B
+}
+
+static int databits_to_constant(int data_bits)
+{
+#define CS(x) case x: return CS##x
+    switch(data_bits) {
+        CS(5);     CS(6);     CS(7);    CS(8);
+    default: return 0;
+    }
+#undef CS
+}
+
+/**
  * Sets the attributes of the serial port
  *
- * @serial_port serial port identifier
- * @speed the baudrate
- * @parity the amount of parity bits
  */
-static int set_interface_attribs(HANDLE serial_port, int speed, int parity)
+static int set_interface_attribs(struct s_serial *serial)
 {
   struct termios tty;
   int err = 0;
   memset (&tty, 0, sizeof tty);
-  if (tcgetattr (serial_port, &tty) != 0) {
+  if (serial->auto_conf && tcgetattr (serial->serial_port, &tty) != 0) {
     perror ("error tcgetattr - get the parameters associated with the terminal");
     err = -1;
   }
-  else {
+  else if (!serial->auto_conf) {
     /* set baudrate */
-    cfsetospeed (&tty, speed);
-    cfsetispeed (&tty, speed);
+    cfsetospeed (&tty, rate_to_constant(serial->baudrate));
+    cfsetispeed (&tty, rate_to_constant(serial->baudrate));
 
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;     // 8-bit chars
+    tty.c_cflag = (tty.c_cflag & ~CSIZE) | databits_to_constant(serial->data_bits);
     // disable IGNBRK for mismatched speed tests; otherwise receive break
     // as \000 chars
     tty.c_iflag &= ~IGNBRK;         // disable break processing
@@ -63,13 +88,28 @@ static int set_interface_attribs(HANDLE serial_port, int speed, int parity)
 
     tty.c_iflag &= ~(IXON | IXOFF | IXANY); // shut off xon/xoff ctrl
     tty.c_cflag |= (CLOCAL | CREAD);// ignore modem controls,
-                                    // enable reading
-    tty.c_cflag &= ~(PARENB | PARODD);      // shut off parity
-    tty.c_cflag |= parity;
-    tty.c_cflag &= ~CSTOPB;
+
+    /* parity */
+    if(serial->parity == PARITY_NONE) {
+      tty.c_cflag &= ~(PARENB | PARODD);
+    } else if(serial->parity == PARITY_ODD) {
+      tty.c_cflag &= ~(PARENB | PARODD);
+      tty.c_cflag |= (PARENB | PARODD);
+    } else {
+      tty.c_cflag &= ~(PARENB | PARODD);
+      tty.c_cflag |= (PARENB);
+    }
+
+    /* stop bits */
+    if(serial->stop_bits != 2) {
+      tty.c_cflag &= ~CSTOPB;
+    } else {
+      tty.c_cflag |= CSTOPB;
+    }
+
     tty.c_cflag &= ~CRTSCTS;
 
-    if (tcsetattr (serial_port, TCSANOW, &tty) != 0) {
+    if (tcsetattr(serial->serial_port, TCSANOW, &tty) != 0) {
       perror ("error tcsetattr");
       err = 1;
     }
@@ -120,15 +160,17 @@ int serial_set_timeout(HANDLE serial_port, int timeout_ms)
  * @return identifier for the serial port
  *         < 0 on error
  */
-HANDLE serial_open(char *port_name)
+HANDLE serial_open(char *port_name, struct s_serial *serial)
 {
   HANDLE serial_port = open (port_name, O_RDWR | O_NOCTTY | O_SYNC);
+  serial->serial_port = 0;
+  serial->serial_port = serial_port;
   if (serial_port >= 0) {
-    if(set_interface_attribs (serial_port, B9600, 0) < 0) {
+    if(set_interface_attribs(serial) < 0) {
       close(serial_port);
       serial_port = -1;
     }
-    else if(serial_set_timeout(serial_port, SERIAL_DEFAULT_TIMEOUT) < 0) {
+    else if(serial_set_timeout(serial_port, serial->timeout) < 0) {
       close(serial_port);
       serial_port = -1;
     }
