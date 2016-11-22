@@ -11,8 +11,8 @@
 #include <malloc.h>
 #include <string.h>
 #ifdef _WIN32
-  #include <Winsock2.h>
-  #include <Ws2tcpip.h>
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
   #include <windows.h>
   #include <tchar.h>
   #include <strsafe.h>
@@ -182,7 +182,7 @@ HANDLE serial_open(char *port_name, struct s_serial *serial)
   return serial_port;
 }
 #elif _WIN32
-void serial_set_timeout(HANDLE serial_port, int timeout_ms)
+int serial_set_timeout(HANDLE serial_port, int timeout_ms)
 {
   COMMTIMEOUTS timeouts = {0};
   timeouts.ReadIntervalTimeout = 0;
@@ -237,7 +237,7 @@ static int set_interface_attribs (HANDLE serial_port, int parity, int speed)
  * @return the serial port handle
  *         < 0 on error
  */
-HANDLE serial_open()
+HANDLE serial_open(char *port_name, struct s_serial *serial)
 {
   HANDLE serial_port;
 

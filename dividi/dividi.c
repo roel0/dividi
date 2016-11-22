@@ -17,9 +17,9 @@
 #include <fcntl.h>
 #include <time.h>
 #if defined _WIN32
-  #include <Winsock2.h>
-  #include "Mswsock.h"
-  #include <Ws2tcpip.h>
+  #include <winsock2.h>
+  #include "mswsock.h"
+  #include <ws2tcpip.h>
   #include <windows.h>
   #include <tchar.h>
   #include <strsafe.h>
@@ -57,7 +57,8 @@
 #ifdef __linux__
 #define DEFAULT_CONFIG_FILE              "/etc/dividi.conf"
 #elif defined _WIN32
-#define DEAULT_CONFIG_FILE               "~/dividi.conf"
+#define DEFAULT_CONFIG_FILE               "~/dividi.conf"
+#define poll WSAPoll
 #endif
 
 
@@ -67,6 +68,12 @@
 #define DIVIDI_TCP2SERIAL_QUEUE 1
 
 static struct s_link links[MAX_LINKS];
+
+#ifdef _WIN32
+struct pollfd {
+  int fd;
+};
+#endif
 
 struct s_conn {
   int tcp_socket;
@@ -412,12 +419,10 @@ static int start_connection_handlers(struct s_conn *conn)
   nbr_of_references++;
   pthread_create( &out_tcp, NULL, tcp_out_handler, conn);
 #elif _WIN32
-  LPDWORD in_tcp;
-  LPDWORD out_tcp;
   nbr_of_references++;
-  CreateThread(NULL, 0, tcp_in_handler, conn, 0, in_tcp);
+  CreateThread(NULL, 0, tcp_in_handler, conn, 0, NULL);
   nbr_of_references++;
-  CreateThread(NULL, 0, tcp_out_handler, conn, 0, out_tcp);
+  CreateThread(NULL, 0, tcp_out_handler, conn, 0, NULL);
 #endif
   return nbr_of_references;
 }
@@ -434,10 +439,8 @@ static void start_queues_handlers()
   pthread_create( &in, NULL, serial_in_handler, NULL);
   pthread_create( &out, NULL, serial_out_handler, NULL);
 #elif _WIN32
-  LPDWORD in;
-  LPDWORD out;
-  CreateThread(NULL, 0, serial_in_handler, NULL, 0, in);
-  CreateThread(NULL, 0, serial_out_handler, NULL, 0, out);
+  CreateThread(NULL, 0, serial_in_handler, NULL, 0, NULL);
+  CreateThread(NULL, 0, serial_out_handler, NULL, 0, NULL);
 #endif
 }
 
@@ -911,6 +914,7 @@ static void open_connection(SSL_CTX *ctx, int sock, struct s_link *link)
   free(conn);
 }
 
+#ifdef __linux__
 /**
  * Will check the sockets for new connection
  * requests
@@ -936,6 +940,39 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
   }
   return 0;
 }
+#elif _WIN32
+/**
+ * Will check the sockets for new connection
+ * requests
+ */
+static int select_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
+{
+  int index;
+  int polled = 0;
+  int maxfd;
+  int ret;
+  struct fd_set set;
+
+  for (index = 0; index < MAX_LINKS; index++) {
+    FD_SET(s[index].fd, &set);
+    if (s[index].fd > maxfd)
+        maxfd = s[index].fd;
+  }
+
+  dbg("Polling for incoming connections\n");
+  ret = select(maxfd + 1, &set, NULL, NULL, NULL);
+
+  if (ret) {
+    for (index = 0; index < MAX_LINKS; index++) {
+      if (FD_ISSET(s[index].fd, &set)) {
+        open_connection(ctx, s[index].fd, &links[index]);
+      }
+    }
+  }
+  return 0;
+}
+
+#endif
 
 /**
  * Initialises the queue
@@ -1050,7 +1087,9 @@ int main(int argc, char **argv)
 #endif
       exit(-1);
     }
+#ifdef __linux__
     s[index].events = POLLIN;
+#endif
     if(setsockopt(s[index].fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&optval, sizeof(optval)) < 0) {
       perror("setsockopt failed");
       exit(-1);
@@ -1059,7 +1098,11 @@ int main(int argc, char **argv)
   dividi_running = 1;
   total_links = index;
   while(dividi_running) {
+#ifdef __linux__
     if(poll_sockets(s, index, ctx) < 0) {
+#elif _WIN32
+    if(select_sockets(s, index, ctx) < 0) {
+#endif
       break;
     }
   }

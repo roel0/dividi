@@ -1,9 +1,12 @@
 TARGET = dividi
 SRC_DIR = dividi
-INC_DIR = $(SRC_DIR)
+INC_DIR = -I$(SRC_DIR)
 TEST_DIR = test
 TARGET_DIR = build
 LIBS = -lpthread -lcrypto -lssl
+ifeq ($(OS),Windows_NT)
+	LIBS += -lws2_32
+endif
 SRCS=$(wildcard $(SRC_DIR)/*.c)
 OBJS=$(patsubst  %.c, %.o, $(SRCS))
 CFLAGS = -Wall
@@ -26,7 +29,7 @@ directories:
 
 %.o : %.c
 	@echo '### Building ###'
-	$(CC) -c $(CFLAGS) $(DEBUG) -o $(TARGET_DIR)/$@ $<
+	$(CC) -c $(CFLAGS) $(DEBUG) $(INC_DIR) -o $(TARGET_DIR)/$@ $<
 
 $(TARGET): $(OBJS)
 	@echo '### Linking ###'
@@ -34,10 +37,10 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $(addprefix $(TARGET_DIR)/, $(OBJS)) -o $(TARGET_DIR)/$(SRC_DIR)/$@ $(LIBS)
 
 queue_test:
-	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/queue_test -DTEST -I$(INC_DIR) $(TEST_DIR)/queue_test.c $(LIBS)
+	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/queue_test -DTEST $(INC_DIR) $(TEST_DIR)/queue_test.c $(LIBS)
 
 serial_test:
-	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/serial_test -I$(INC_DIR) $(TEST_DIR)/serial_test.c -lm
+	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/serial_test $(INC_DIR) $(TEST_DIR)/serial_test.c -lm
 	$(CP_VR) $(TEST_DIR)/dummy $(TARGET_DIR)/$(TEST_DIR)
 
 example: debug
