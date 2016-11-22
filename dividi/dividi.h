@@ -43,4 +43,9 @@ void set_root_file(char *value);
 void set_key_file(char *value);
 void set_cert_file(char *value);
 
+/**
+ * Outputs error message
+ */
+void print_error(char *error_msg);
+
 #endif

@@ -682,7 +682,7 @@ static char *receive_message(SSL *ns, int *total_bytes_read)
 static int send_message(SSL *ns, char *message)
 {
   if(!SSL_write(ns, message, strlen(message))) {
-    perror("send failed");
+    print_error("send failed");
     return -1;
   }
   return 0;
@@ -742,7 +742,7 @@ static void allocate_queues()
   serial2tcp_queue = (struct s_entry **) malloc(QUEUE_SIZE*sizeof(struct s_entry *));
   tcp2serial_queue = (struct s_entry **) malloc(QUEUE_SIZE*sizeof(struct s_entry *));
   if(!serial2tcp_queue || !tcp2serial_queue) {
-    perror("malloc failed");
+    print_error("malloc failed");
     exit(-1);
   }
   for(i = 0; i<QUEUE_SIZE; i++) {
@@ -755,7 +755,7 @@ static void allocate_queues()
       }
       free(serial2tcp_queue);
       free(tcp2serial_queue);
-      perror("malloc failed");
+      print_error("malloc failed");
       exit(-1);
     }
   }
@@ -845,25 +845,11 @@ static void open_link(struct s_link *link, char *port_name)
 {
   HANDLE fd = serial_open(port_name, &link->serial);
   if(fd < 0) {
-    perror("serial_open failed");
+    print_error("serial_open failed");
     exit(-1);
   }
   dbg("Opened %s\n", port_name);
   link->serial.serial_port = fd;
-}
-
-struct s_link * add_link(char *serial_port, char *tcp_port)
-{
-  int index = get_empty_link_slot();
-
-  if(index < 0) {
-    fprintf(stderr, "MAX_LINKS exceeded\n");
-    exit(-1);
-  }
-  dbg("Adding link (serial: %s, tcp: %s)\n", serial_port, tcp_port);
-  links[index].tcp_port = atoi(tcp_port);
-  open_link(&links[index], serial_port);
-  return &links[index];
 }
 
 static int get_empty_link_slot()
@@ -886,15 +872,11 @@ static void open_connection(SSL_CTX *ctx, int sock, struct s_link *link)
   struct s_conn *conn = (struct s_conn *) malloc(sizeof(struct s_conn));
 
   if(conn == NULL) {
-    perror("malloc");
+    print_error("malloc");
     exit(-1);
   }
   if ((conn->tcp_socket = accept(sock, NULL, NULL)) < 0) {
-#ifdef __linux__
-    perror("accept failed");
-#elif _WIN32
-    fprintf(stderr, "accept failed with error: %d\n", WSAGetLastError());
-#endif
+    print_error("accept failed");
     free(conn);
     exit(-1);
   }
@@ -902,7 +884,7 @@ static void open_connection(SSL_CTX *ctx, int sock, struct s_link *link)
   ssl = SSL_new(ctx);
   SSL_set_bio(ssl, sbio, sbio);
   if (SSL_accept(ssl) == -1) {
-    fprintf(stderr, "SSL setup failed\n");
+    print_error("SSL_accept");
     free(conn);
     exit(-1);
   }
@@ -1016,6 +998,36 @@ static void ssl_load_certificates(SSL_CTX *ctx, char *root, char *cert, char *ke
     ssl_fatal("cert/key");
 }
 ////////////////////////////////////PUBLIC////////////////////////////////////////////////
+
+/**
+ * Add a link to the look-up table
+ */
+struct s_link * add_link(char *serial_port, char *tcp_port)
+{
+  int index = get_empty_link_slot();
+
+  if(index < 0) {
+    fprintf(stderr, "MAX_LINKS exceeded\n");
+    exit(-1);
+  }
+  dbg("Adding link (serial: %s, tcp: %s)\n", serial_port, tcp_port);
+  links[index].tcp_port = atoi(tcp_port);
+  open_link(&links[index], serial_port);
+  return &links[index];
+}
+
+/**
+ * Outputs error message
+ */
+void print_error(char *error_msg)
+{
+#ifdef __linux__
+  perror(error_msg);
+#elif _WIN32
+  fprintf(stderr, "%s: %d\n", error_msg, WSAGetLastError());
+#endif
+}
+
 /**
  * Application entry-point
  */
@@ -1062,7 +1074,7 @@ int main(int argc, char **argv)
       break;
     }
     if ((s[index].fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-      perror("socket failed");
+      print_error("socket failed");
       exit(-1);
     }
 
@@ -1072,19 +1084,11 @@ int main(int argc, char **argv)
     sain.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(s[index].fd, (struct sockaddr *)&sain, sizeof(sain)) < 0) {
-#ifdef __linux__
-      perror("bind failed");
-#elif _WIN32
-      fprintf(stderr, "bind failed with error: %d\n", WSAGetLastError());
-#endif
+      print_error("bind failed");
       exit(-1);
     }
     if (listen(s[index].fd, MAX_ACTIVE_CONNECTIONS) < 0) {
-#ifdef __linux__
-      perror("listen failed");
-#elif _WIN32
-      fprintf(stderr, "listen failed with error: %d\n", WSAGetLastError());
-#endif
+      print_error("listen failed");
       exit(-1);
     }
 #ifdef __linux__

@@ -26,6 +26,7 @@
   #include <sys/socket.h>
 #endif
 #include "serial.h"
+#include "dividi.h"
 
 #define SERIAL_DATA_CHUNK_SIZE 512
 #define SERIAL_DATA_MAX        50*SERIAL_DATA_CHUNK_SIZE
@@ -288,7 +289,7 @@ int serial_write(HANDLE serial_port, char *data)
 #elif _WIN32
   if(!WriteFile(serial_port,data, strlen(data), &bytes_written, NULL)) {
 #endif
-    perror("Error while writing to serial port");
+    print_error("serial_write");
     serial_close(serial_port);
     bytes_written = -1;
   }
