@@ -11,9 +11,10 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 
-#ifdef _WIN32
-char* strsep(char** stringp, const char* delim);
-#endif
+/**
+ * Split a string based on a delimiter
+ */
+char* strsep_delim(char** stringp, const char* delim);
 /*
  * Trim whitespace and newlines from a string
  */

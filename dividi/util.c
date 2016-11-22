@@ -17,8 +17,10 @@
   #include <linux/limits.h>
 #endif
 
-#ifdef _WIN32
-char* strsep(char** stringp, const char* delim)
+/**
+ * Split a string based on a delimiter
+ */
+char* strsep_delim(char** stringp, const char* delim)
 {
   char* start = *stringp;
   char* p;
@@ -35,7 +37,7 @@ char* strsep(char** stringp, const char* delim)
 
   return start;
 }
-#endif
+
 /*
  * Trim whitespace and newlines from a string
  */

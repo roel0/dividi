@@ -82,7 +82,7 @@ static int conf_parse_link(char *line, int line_len)
   /* Split link string in tcp_port and serial_port */
   tcp_port = link;
   serial_port = link;
-  strsep(&tcp_port, ":");
+  strsep_delim(&tcp_port, ":");
   strtrim(tcp_port);
   strtrim(serial_port);
   if(tcp_port == NULL || serial_port == NULL) {
@@ -102,7 +102,7 @@ static int conf_parse_key(char *line)
   char *key, *value;
   key = line;
   value = line;
-  strsep(&value, "=");
+  strsep_delim(&value, "=");
   strtrim(key);
   strtrim(value);
   if(key == NULL || value == NULL) {
