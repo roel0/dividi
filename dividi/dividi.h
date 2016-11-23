@@ -29,10 +29,7 @@
 // Look up table for all links
 struct s_link {
   int tcp_port;
-  union {
-    struct s_serial serial;
-    char str_serial[MAX_LINE];
-  } s;
+  struct s_serial serial;
 };
 
 /**

@@ -21,6 +21,7 @@ typedef int HANDLE;
 #undef PARITY_ODD
 #endif
 
+#define MAX_NAME 100
 
 enum e_flow {
   FLOW_NONE,
@@ -36,6 +37,7 @@ enum e_parity {
 };
 
 struct s_serial {
+  char str_serial_port[MAX_NAME];
   HANDLE serial_port;
   int timeout;
   int baudrate;
