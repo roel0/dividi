@@ -870,7 +870,6 @@ static int open_all_serial()
   int i;
   for(i = 0; i < MAX_LINKS; i++) {
     if(links[i].tcp_port != 0) {
-      dbg("Adding link (serial: %s, tcp: )\n", links[i].serial.str_serial_port);
       open_link(&links[i], links[i].serial.str_serial_port);
     }
   }
@@ -993,11 +992,11 @@ void ssl_fatal(char *s)
 /**
  * Loads all the needed certificates for ssl
  */
-static void ssl_load_certificates(SSL_CTX *ctx, char *root, char *cert, char *key)
+static int ssl_load_certificates(SSL_CTX *ctx, char *root, char *cert, char *key)
 {
   if(!(*root && *cert && *key)) {
     fprintf(stderr, "Warning, server is unsecured!\n");
-    return;
+    return -1;
   }
   // Client verification
   if (!SSL_CTX_load_verify_locations(ctx, root, NULL))
@@ -1013,6 +1012,7 @@ static void ssl_load_certificates(SSL_CTX *ctx, char *root, char *cert, char *ke
 
   if (!SSL_CTX_check_private_key(ctx))
     ssl_fatal("cert/key");
+  return 0;
 }
 ////////////////////////////////////PUBLIC////////////////////////////////////////////////
 
@@ -1059,6 +1059,7 @@ int main(int argc, char **argv)
   int index;
   struct sockaddr_in sain;
   int optval = 1;
+  int secure;
 
 #ifdef _WIN32
   WSADATA wsa_data;
@@ -1077,8 +1078,12 @@ int main(int argc, char **argv)
     fprintf(stderr, "Can't create ssl context\n");
     exit(-1);
   }
-  ssl_load_certificates(ctx, root_file, cert_file, key_file);
-  /*SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);*/
+  secure = !ssl_load_certificates(ctx, root_file, cert_file, key_file);
+  if(secure) {
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+  } else {
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+  }
 
   atexit(destroy_everything);
   memset(links, 0, MAX_LINKS*sizeof(struct s_link));
