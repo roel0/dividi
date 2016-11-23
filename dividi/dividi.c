@@ -52,7 +52,6 @@
 #define MAX_ACTIVE_CONNECTIONS           50
 #define MAX_SEM_COUNT                    QUEUE_SIZE
 #define MAX_LINKS                        100
-#define MAX_LINE                         100
 
 #ifdef __linux__
 #define DEFAULT_CONFIG_FILE              "/etc/dividi.conf"
@@ -469,7 +468,7 @@ static DWORD WINAPI serial_out_handler()
     //Check if conn is still active
     if(entry->conn != NULL) {
       link = entry->conn->link;
-      serial_port = link->serial.serial_port;
+      serial_port = link->s.serial.serial_port;
 
       dbg("serial_write %s", entry->message);
       if(serial_write(serial_port, entry->message) < 0) {
@@ -546,7 +545,7 @@ static DWORD WINAPI serial_in_handler()
   serial2tcp_queue_running = 1;
   while(serial2tcp_queue_running) {
     for(index=0; index<total_links; index++) {
-      message = serial_read(links[index].serial.serial_port, &bytes_read);
+      message = serial_read(links[index].s.serial.serial_port, &bytes_read);
       if(bytes_read > 0) {
         serial2tcp_queue_add(&links[index], message);
         //are other ports listening to the same serial device?
@@ -554,7 +553,7 @@ static DWORD WINAPI serial_in_handler()
           if(index2 == index) {
             continue;
           }
-          if(links[index].serial.serial_port == links[index2].serial.serial_port) {
+          if(links[index].s.serial.serial_port == links[index2].s.serial.serial_port) {
             serial2tcp_queue_add(&links[index2], message);
           }
         }
@@ -843,13 +842,15 @@ static void handle_arguments(int argc, char **argv)
  */
 static void open_link(struct s_link *link, char *port_name)
 {
-  HANDLE fd = serial_open(port_name, &link->serial);
+  HANDLE fd;
+  dbg("opening %s\n", port_name);
+  fd = serial_open(port_name, &link->s.serial);
   if(fd < 0) {
     print_error("serial_open failed");
     exit(-1);
   }
   dbg("Opened %s\n", port_name);
-  link->serial.serial_port = fd;
+  link->s.serial.serial_port = fd;
 }
 
 static int get_empty_link_slot()
@@ -857,8 +858,20 @@ static int get_empty_link_slot()
   int i;
   for(i = 0; i < MAX_LINKS; i++) {
     if(links[i].tcp_port == 0) {
-      memset(&links[i].serial, 0, sizeof(struct s_serial));
+      memset(&links[i].s.serial, 0, sizeof(struct s_serial));
       return i;
+    }
+  }
+  return -1;
+}
+
+static int open_all_serial()
+{
+  int i;
+  for(i = 0; i < MAX_LINKS; i++) {
+    if(links[i].tcp_port != 0) {
+      dbg("Adding link (serial: %s, tcp: )\n", links[i].s.str_serial);
+      open_link(&links[i], links[i].s.str_serial);
     }
   }
   return -1;
@@ -982,6 +995,10 @@ void ssl_fatal(char *s)
  */
 static void ssl_load_certificates(SSL_CTX *ctx, char *root, char *cert, char *key)
 {
+  if(!(*root && *cert && *key)) {
+    fprintf(stderr, "Warning, server is unsecured!\n");
+    return;
+  }
   // Client verification
   if (!SSL_CTX_load_verify_locations(ctx, root, NULL))
     ssl_fatal("verify");
@@ -1012,7 +1029,7 @@ struct s_link * add_link(char *serial_port, char *tcp_port)
   }
   dbg("Adding link (serial: %s, tcp: %s)\n", serial_port, tcp_port);
   links[index].tcp_port = atoi(tcp_port);
-  open_link(&links[index], serial_port);
+  memcpy(links[index].s.str_serial, serial_port, strlen(serial_port)+1);
   return &links[index];
 }
 
@@ -1067,6 +1084,7 @@ int main(int argc, char **argv)
   memset(links, 0, MAX_LINKS*sizeof(struct s_link));
 
   conf_parse(config_file);
+  open_all_serial();
   init();
 
   for(index=0; index<MAX_LINKS; index++) {

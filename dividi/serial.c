@@ -177,7 +177,6 @@ HANDLE serial_open(char *port_name, struct s_serial *serial)
     }
   }
   else {
-    perror ("serial_open failed");
     serial_port = -1;
   }
   return serial_port;
@@ -247,7 +246,6 @@ HANDLE serial_open(char *port_name, struct s_serial *serial)
                 port_name, GENERIC_READ|GENERIC_WRITE, 0, NULL,
                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
   if (serial_port == INVALID_HANDLE_VALUE) {
-    fprintf(stderr, "CreateFile: %d\n", WSAGetLastError());
     serial_port = NULL;
   }
   else

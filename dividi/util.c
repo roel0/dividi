@@ -29,8 +29,7 @@ char* strsep_delim(char** stringp, const char* delim)
 
   if (p == NULL) {
     *stringp = NULL;
-  }
-  else {
+  } else {
     *p = '\0';
     *stringp = p + 1;
   }

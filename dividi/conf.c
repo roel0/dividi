@@ -28,15 +28,15 @@ static int conf_parse_link_settings(char *key, char *value)
 {
   dbg("Config link: %s=%s\n", key, value);
   if(strcmp(key, "timeout") == 0) {
-    active_link->serial.timeout = atoi(value);
+    active_link->s.serial.timeout = atoi(value);
   } else if(strcmp(key, "baudrate") == 0) {
-    active_link->serial.baudrate = atoi(value);
+    active_link->s.serial.baudrate = atoi(value);
   } else if(strcmp(key, "data_bits") == 0) {
-    active_link->serial.data_bits = atoi(value);
+    active_link->s.serial.data_bits = atoi(value);
   } else if(strcmp(key, "stop_bits") == 0) {
-    active_link->serial.stop_bits = atoi(value);
+    active_link->s.serial.stop_bits = atoi(value);
   } else if(strcmp(key, "auto_conf") == 0) {
-    active_link->serial.auto_conf = atoi(value);
+    active_link->s.serial.auto_conf = atoi(value);
   } else if(strcmp(key, "parity") == 0) {
     //XXX
   } else if(strcmp(key, "flow") == 0) {
@@ -139,7 +139,6 @@ int conf_parse(const char *file)
     char *comment;
 
     linenum++;
-
     /* ignore comments */
     if((comment = strchr(line, '#'))) {
       *comment = '\0';
@@ -153,11 +152,13 @@ int conf_parse(const char *file)
     if(line[0] == '[' && line[line_len - 1] == ']') {
       if(conf_parse_link(line, line_len) < 0) {
         ret = -1;
+        dbg("what");
         fprintf(stderr, "Configuration file (%s) error at line %d\n", file, linenum);
         goto cleanup;
       }
     }
     else if(conf_parse_key(line) < 0) {
+        dbg("what");
       ret = -1;
       fprintf(stderr, "Configuration file (%s) error at line %d\n", file, linenum);
       goto cleanup;
