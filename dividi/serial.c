@@ -31,26 +31,14 @@
 #define SERIAL_DATA_CHUNK_SIZE 512
 #define SERIAL_DATA_MAX        50*SERIAL_DATA_CHUNK_SIZE
 
+static int rate_to_constant(int baudrate);
+
 #ifdef __linux__
 
 /**
- * Convert a baudrate in integer format
+ * Convert data_bits in integer format
  * to the constant format
  */
-static int rate_to_constant(int baudrate)
-{
-#define B(x) case x: return B##x
-  switch(baudrate) {
-    B(50);     B(75);     B(110);    B(134);    B(150);
-    B(200);    B(300);    B(600);    B(1200);   B(1800);
-    B(2400);   B(4800);   B(9600);   B(19200);  B(38400);
-    B(57600);  B(115200); B(230400); B(460800); B(500000);
-    B(576000); B(921600); B(1000000);B(1152000);B(1500000);
-  default: return 0;
-  }
-#undef B
-}
-
 static int databits_to_constant(int data_bits)
 {
 #define CS(x) case x: return CS##x
@@ -71,10 +59,8 @@ static int set_interface_attribs(struct s_serial *serial)
   int err = 0;
   memset (&tty, 0, sizeof tty);
   if (serial->auto_conf && tcgetattr (serial->serial_port, &tty) != 0) {
-    perror ("error tcgetattr - get the parameters associated with the terminal");
     err = -1;
-  }
-  else if (!serial->auto_conf) {
+  } else if (!serial->auto_conf) {
     /* set baudrate */
     cfsetospeed (&tty, rate_to_constant(serial->baudrate));
     cfsetispeed (&tty, rate_to_constant(serial->baudrate));
@@ -111,7 +97,6 @@ static int set_interface_attribs(struct s_serial *serial)
     tty.c_cflag &= ~CRTSCTS;
 
     if (tcsetattr(serial->serial_port, TCSANOW, &tty) != 0) {
-      perror ("error tcsetattr");
       err = 1;
     }
   }
@@ -132,23 +117,19 @@ int serial_set_timeout(HANDLE serial_port, int timeout_ms)
   int arg = FNDELAY;
   memset (&tty, 0, sizeof tty);
   if (tcgetattr (serial_port, &tty) != 0) {
-    perror ("error tggetattr - get the parameters associated with the terminal");
     err = -1;
-  }
-  else {
+  } else {
     /* If we don't unset FNDELAY, VMIN and VTIME have no effect */
     if(timeout_ms) {
       arg = 0;
     }
     if(fcntl(serial_port, F_SETFL, arg) == -1) {
-      perror("fcntl failed");
       err = -1;
     }
     tty.c_cc[VMIN]  = (timeout_ms) ? 0 : 1;
     tty.c_cc[VTIME] = timeout_ms/100;            // in intervals of 0.1s
 
     if (tcsetattr (serial_port, TCSADRAIN, &tty) != 0) {
-      perror ("error setting term attributes");;
       err = -1;
     }
   }
@@ -158,106 +139,116 @@ int serial_set_timeout(HANDLE serial_port, int timeout_ms)
 /**
  * Open a serial port by given port name
  *
- * @return identifier for the serial port
+ * @return   0 on succes
  *         < 0 on error
  */
-HANDLE serial_open(char *port_name, struct s_serial *serial)
+int serial_open(struct s_serial *serial)
 {
-  HANDLE serial_port = open (port_name, O_RDWR | O_NOCTTY | O_SYNC);
-  serial->serial_port = 0;
-  serial->serial_port = serial_port;
-  if (serial_port >= 0) {
+  int ret;
+
+  serial->serial_port = open(serial->str_serial_port, O_RDWR | O_NOCTTY | O_SYNC);;
+  if (serial->serial_port >= 0) {
     if(set_interface_attribs(serial) < 0) {
-      close(serial_port);
-      serial_port = -1;
+      close(serial->serial_port);
+      ret = -1;
+    } else if(serial_set_timeout(serial->serial_port, serial->timeout) < 0) {
+      close(serial->serial_port);
+      ret = -1;
     }
-    else if(serial_set_timeout(serial_port, serial->timeout) < 0) {
-      close(serial_port);
-      serial_port = -1;
-    }
+  } else {
+    ret = -1;
   }
-  else {
-    serial_port = -1;
-  }
-  return serial_port;
+  return ret;
 }
 #elif _WIN32
 int serial_set_timeout(HANDLE serial_port, int timeout_ms)
 {
+  int ret = 0;
   COMMTIMEOUTS timeouts = {0};
+
   timeouts.ReadIntervalTimeout = 0;
-  timeouts.ReadTotalTimeoutConstant = SERIAL_DEFAULT_TIMEOUT;
+  timeouts.ReadTotalTimeoutConstant = timeout_ms;
   timeouts.ReadTotalTimeoutMultiplier = 0;
-  timeouts.WriteTotalTimeoutConstant = SERIAL_DEFAULT_TIMEOUT;
+  timeouts.WriteTotalTimeoutConstant = timeout_ms;
   timeouts.WriteTotalTimeoutMultiplier = 0;
+
   if(SetCommTimeouts(serial_port, &timeouts) == 0) {
-    fprintf(stderr, "SetCommTimeouts: %d\n", WSAGetLastError());
     CloseHandle(serial_port);
-    return -1;
+    ret = -1;
   }
-  return 0;
+  return ret;
 }
 /**
  * This function will allow you to set
  * attributes of the serial port on WINDOWS
  */
-static int set_interface_attribs (HANDLE serial_port, int parity, int speed)
+static int set_interface_attribs (struct s_serial *serial)
 {
   int err = 0;
   COMMTIMEOUTS timeouts = {0};
   DCB dcbSerialParams = {0};
-  // 1 stop bit, no parity)
+
   dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-  if (GetCommState(serial_port, &dcbSerialParams) == 0) {
-    fprintf(stderr, "GetCommState: %d\n", WSAGetLastError());
-    CloseHandle(serial_port);
+  if (GetCommState(serial->serial_port, &dcbSerialParams) == 0) {
+    CloseHandle(serial->serial_port);
     err = -1;
-  }
-  else {
-    dcbSerialParams.BaudRate = speed;
-    dcbSerialParams.ByteSize = 8;
-    dcbSerialParams.StopBits = ONESTOPBIT;
-    dcbSerialParams.Parity = parity;
-    if(SetCommState(serial_port, &dcbSerialParams) == 0) {
-      fprintf(stderr, "SetCommState: %d\n", WSAGetLastError());
-      CloseHandle(serial_port);
+  } else {
+    dcbSerialParams.BaudRate = rate_to_constant(serial->baudrate);
+    dcbSerialParams.ByteSize = serial->data_bits;
+    dcbSerialParams.StopBits = serial->stop_bits;
+    dcbSerialParams.Parity = serial->parity;
+    if(SetCommState(serial->serial_port, &dcbSerialParams) == 0) {
+      CloseHandle(serial->serial_port);
       err = -1;
-    }
-    else {
+    } else {
       // Set COM port timeout settings
-      err = serial_set_timeout(serial_port, SERIAL_DEFAULT_TIMEOUT);
+      err = serial_set_timeout(serial->serial_port, serial->timeout);
     }
   }
   return err;
 }
 
 /**
- * This function will open a serial port on WINDOWS
+ * Open a serial port by given port name
  *
- * @return the serial port handle
+ * @return   0 on succes
  *         < 0 on error
  */
-HANDLE serial_open(char *port_name, struct s_serial *serial)
+int serial_open(struct s_serial *serial)
 {
-  HANDLE serial_port;
-
+  int ret = 0;
   // Open the highest available serial port number
-  serial_port = CreateFile(
-                port_name, GENERIC_READ|GENERIC_WRITE, 0, NULL,
-                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
-  if (serial_port == INVALID_HANDLE_VALUE) {
-    serial_port = NULL;
-  }
-  else
-  {
-    if(set_interface_attribs(serial_port, NOPARITY, CBR_9600) < 0) {
-      fprintf(stderr, "set_interface_attribs: %d\n", WSAGetLastError());
-      serial_port = NULL;
+  serial->serial_port = CreateFile(
+                        serial->str_serial_port, GENERIC_READ|GENERIC_WRITE, 0, NULL,
+                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
+  if (serial->serial_port == INVALID_HANDLE_VALUE) {
+    ret = -1;
+  } else {
+    if(set_interface_attribs(serial) < 0) {
+      ret = -1;
     }
   }
-  return serial_port;
+  return ret;
 }
 #endif
+
+/**
+ * Convert a baudrate in integer format
+ * to the constant format
+ */
+static int rate_to_constant(int baudrate)
+{
+#define B(x) case x: return B##x
+  switch(baudrate) {
+    B(50);     B(75);     B(110);    B(134);    B(150);
+    B(200);    B(300);    B(600);    B(1200);   B(1800);
+    B(2400);   B(4800);   B(9600);   B(19200);  B(38400);
+    B(57600);  B(115200); B(230400); B(460800); B(500000);
+    B(576000); B(921600); B(1000000);B(1152000);B(1500000);
+  default: return 0;
+  }
+#undef B
+}
 
 /**
  * This function will close a serial port
@@ -287,7 +278,6 @@ int serial_write(HANDLE serial_port, char *data)
 #elif _WIN32
   if(!WriteFile(serial_port,data, strlen(data), &bytes_written, NULL)) {
 #endif
-    print_error("serial_write");
     serial_close(serial_port);
     bytes_written = -1;
   }

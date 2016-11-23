@@ -11,18 +11,19 @@
 #ifndef __SERIAL_H__
 #define __SERIAL_H__
 
-#define SERIAL_DEFAULT_TIMEOUT                   200
-
 #ifdef __linux__
-typedef int HANDLE;
+  typedef int HANDLE;
 #elif defined _WIN32
-#undef PARITY_EVEN
-#undef PARITY_NONE
-#undef PARITY_ODD
+  #undef PARITY_EVEN
+  #undef PARITY_NONE
+  #undef PARITY_ODD
 #endif
 
-#define MAX_NAME 100
+#define SERIAL_NAME_MAX 20
 
+/**
+ * The different flow controls
+ */
 enum e_flow {
   FLOW_NONE,
   FLOW_XON_XOFF,
@@ -30,14 +31,20 @@ enum e_flow {
   FLOW_DSR_DTR
 };
 
+/**
+ * Different parity modes
+ */
 enum e_parity {
   PARITY_NONE,
   PARITY_ODD,
   PARITY_EVEN
 };
 
+/**
+ * Serial interface
+ */
 struct s_serial {
-  char str_serial_port[MAX_NAME];
+  char str_serial_port[SERIAL_NAME_MAX];
   HANDLE serial_port;
   int timeout;
   int baudrate;
@@ -51,10 +58,10 @@ struct s_serial {
 /**
  * Open a serial port by given port name
  *
- * @return identifier for the serial port
+ * @return   0 on succes
  *         < 0 on error
  */
-HANDLE serial_open();
+int serial_open(struct s_serial *serial);
 
 /**
  * Sets the serial port in blocking or timeout

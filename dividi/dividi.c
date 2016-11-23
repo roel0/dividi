@@ -844,7 +844,7 @@ static void open_link(struct s_link *link, char *port_name)
 {
   HANDLE fd;
   dbg("opening %s\n", port_name);
-  fd = serial_open(port_name, &link->serial);
+  fd = serial_open(&link->serial);
   if(fd < 0) {
     print_error("serial_open failed");
     exit(-1);
@@ -1078,7 +1078,7 @@ int main(int argc, char **argv)
     exit(-1);
   }
   ssl_load_certificates(ctx, root_file, cert_file, key_file);
-  SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+  /*SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);*/
 
   atexit(destroy_everything);
   memset(links, 0, MAX_LINKS*sizeof(struct s_link));
