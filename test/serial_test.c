@@ -1,4 +1,7 @@
 #include "serial.c"
+#include "dividi.c"
+#include "conf.c"
+#include "util.c"
 
 #include <assert.h>
 #include <math.h>
