@@ -40,7 +40,7 @@ queue_test:
 	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/queue_test -DTEST $(INC_DIR) $(TEST_DIR)/queue_test.c $(LIBS)
 
 serial_test:
-	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/serial_test $(INC_DIR) $(TEST_DIR)/serial_test.c -lm
+	$(CC) $(CFLAGS) -o $(TARGET_DIR)/$(TEST_DIR)/serial_test -DTEST $(INC_DIR) $(TEST_DIR)/serial_test.c -lm $(LIBS)
 	$(CP_VR) $(TEST_DIR)/dummy $(TARGET_DIR)/$(TEST_DIR)
 
 example: debug
