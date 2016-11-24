@@ -10,12 +10,12 @@
  ****************************************************************************/
 #include <malloc.h>
 #include <string.h>
+#include <stdio.h>
 #ifdef _WIN32
   #include <winsock2.h>
   #include <ws2tcpip.h>
   #include <windows.h>
   #include <tchar.h>
-  #include <strsafe.h>
 #elif __linux__
   #include <sys/stat.h>
   #include <unistd.h>
@@ -31,10 +31,13 @@
 #define SERIAL_DATA_CHUNK_SIZE 512
 #define SERIAL_DATA_MAX        50*SERIAL_DATA_CHUNK_SIZE
 
+#ifdef _WIN32
+  #define SERIAL_PREFIX       "\\\\.\\"
+#endif
+
 static int rate_to_constant(int baudrate);
 
 #ifdef __linux__
-
 /**
  * Convert data_bits in integer format
  * to the constant format
@@ -160,6 +163,25 @@ int serial_open(struct s_serial *serial)
   }
   return ret;
 }
+/**
+ * Convert a baudrate in integer format
+ * to the constant format
+ */
+static int rate_to_constant(int baudrate)
+{
+ #define B(x) case x: return B##x
+  switch(baudrate) {
+    B(50);     B(75);     B(110);    B(134);    B(150);
+    B(200);    B(300);    B(600);    B(1200);   B(1800);
+    B(2400);   B(4800);   B(9600);   B(19200);  B(38400);
+    B(57600);  B(115200); B(230400); B(460800); B(500000);
+    B(576000); B(921600); B(1000000);B(1152000);B(1500000);
+  default: return 0;
+  }
+#undef B
+}
+
+
 #elif _WIN32
 int serial_set_timeout(HANDLE serial_port, int timeout_ms)
 {
@@ -185,7 +207,6 @@ int serial_set_timeout(HANDLE serial_port, int timeout_ms)
 static int set_interface_attribs (struct s_serial *serial)
 {
   int err = 0;
-  COMMTIMEOUTS timeouts = {0};
   DCB dcbSerialParams = {0};
 
   dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
@@ -217,9 +238,12 @@ static int set_interface_attribs (struct s_serial *serial)
 int serial_open(struct s_serial *serial)
 {
   int ret = 0;
+  char serial_port[SERIAL_NAME_MAX];
+
+  snprintf(serial_port, SERIAL_NAME_MAX, "%s%s", SERIAL_PREFIX, serial->str_serial_port);
   // Open the highest available serial port number
   serial->serial_port = CreateFile(
-                        serial->str_serial_port, GENERIC_READ|GENERIC_WRITE, 0, NULL,
+                        serial_port, GENERIC_READ|GENERIC_WRITE, 0, NULL,
                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
   if (serial->serial_port == INVALID_HANDLE_VALUE) {
     ret = -1;
@@ -230,7 +254,6 @@ int serial_open(struct s_serial *serial)
   }
   return ret;
 }
-#endif
 
 /**
  * Convert a baudrate in integer format
@@ -238,17 +261,20 @@ int serial_open(struct s_serial *serial)
  */
 static int rate_to_constant(int baudrate)
 {
-#define B(x) case x: return B##x
+#define CBR(x) case x: return CBR_##x
   switch(baudrate) {
-    B(50);     B(75);     B(110);    B(134);    B(150);
-    B(200);    B(300);    B(600);    B(1200);   B(1800);
-    B(2400);   B(4800);   B(9600);   B(19200);  B(38400);
-    B(57600);  B(115200); B(230400); B(460800); B(500000);
-    B(576000); B(921600); B(1000000);B(1152000);B(1500000);
+    CBR(110);     CBR(300);     CBR(600);
+    CBR(1200);    CBR(2400);    CBR(4800);
+    CBR(9600);    CBR(14400);   CBR(19200);
+    CBR(38400);   CBR(57600);   CBR(115200);
+    CBR(128000);  CBR(256000);
   default: return 0;
   }
 #undef B
 }
+
+
+#endif
 
 /**
  * This function will close a serial port
@@ -276,7 +302,7 @@ int serial_write(HANDLE serial_port, char *data)
 #ifdef __linux__
   if((bytes_written = write(serial_port, data, strlen(data))) != strlen(data)) {
 #elif _WIN32
-  if(!WriteFile(serial_port,data, strlen(data), &bytes_written, NULL)) {
+  if(!WriteFile(serial_port,data, strlen(data), (LPDWORD) &bytes_written, NULL)) {
 #endif
     serial_close(serial_port);
     bytes_written = -1;
@@ -303,7 +329,7 @@ char *serial_read(HANDLE serial_port, int *total_bytes_read)
 #ifdef __linux__
     bytes_read = read(serial_port, pos, SERIAL_DATA_CHUNK_SIZE);
 #elif _WIN32
-    ReadFile(serial_port, pos, SERIAL_DATA_CHUNK_SIZE, &bytes_read, NULL);
+    ReadFile(serial_port, pos, SERIAL_DATA_CHUNK_SIZE, (LPDWORD) &bytes_read, NULL);
 #endif
     if(!bytes_read || ((total_read+=bytes_read) >= SERIAL_DATA_MAX)) {
       break;
