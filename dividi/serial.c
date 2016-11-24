@@ -147,7 +147,7 @@ int serial_set_timeout(HANDLE serial_port, int timeout_ms)
  */
 int serial_open(struct s_serial *serial)
 {
-  int ret;
+  int ret = 0;
 
   serial->serial_port = open(serial->str_serial_port, O_RDWR | O_NOCTTY | O_SYNC);;
   if (serial->serial_port >= 0) {
