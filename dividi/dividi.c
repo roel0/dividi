@@ -22,7 +22,6 @@
   #include <ws2tcpip.h>
   #include <windows.h>
   #include <tchar.h>
-  #include <strsafe.h>
 #elif __linux__
   #include <sys/stat.h>
   #include <unistd.h>
@@ -842,15 +841,13 @@ static void handle_arguments(int argc, char **argv)
  */
 static void open_link(struct s_link *link, char *port_name)
 {
-  HANDLE fd;
+  int fd;
   dbg("opening %s\n", port_name);
   fd = serial_open(&link->serial);
   if(fd < 0) {
     print_error("serial_open failed");
     exit(-1);
   }
-  dbg("Opened %s\n", port_name);
-  link->serial.serial_port = fd;
 }
 
 static int get_empty_link_slot()
@@ -942,7 +939,6 @@ static int poll_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 static int select_sockets(struct pollfd *s, int total_links, SSL_CTX *ctx)
 {
   int index;
-  int polled = 0;
   int maxfd;
   int ret;
   struct fd_set set;
