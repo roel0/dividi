@@ -38,7 +38,7 @@ void serial_close(HANDLE serial_port)
 
 }
 
-HANDLE serial_open()
+HANDLE serial_open(struct s_serial *serial)
 {
   return 0;
 }

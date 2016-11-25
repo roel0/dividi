@@ -36,7 +36,9 @@ int main(int argc, char *argv[])
   assert(bytes_written == file_length);
   close(fd);
 
-  fd = serial_open("/dev/ttyS11", &serial);
+  sprintf(serial.str_serial_port, "/dev/ttyS11");
+  serial.auto_conf = 1;
+  fd = serial_open(&serial);
   // Serial port timeout test
   struct timeval tval_before, tval_after, tval_result;
   for(i = 500; i<5000; i+=500) {
