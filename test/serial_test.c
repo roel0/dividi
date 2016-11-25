@@ -36,15 +36,17 @@ int main(int argc, char *argv[])
   assert(bytes_written == file_length);
   close(fd);
 
-  sprintf(serial.str_serial_port, "/dev/ttyS11");
+  sprintf(serial.str_serial_port, "/dev/ttyS10");
   serial.auto_conf = 1;
   fd = serial_open(&serial);
+  assert(fd == 0);
   // Serial port timeout test
   struct timeval tval_before, tval_after, tval_result;
   for(i = 500; i<5000; i+=500) {
-    serial_set_timeout(fd, i);
+    int ret = serial_set_timeout(serial.serial_port, i);
+    assert(ret == 0);
     gettimeofday(&tval_before, NULL);
-    data = serial_read(fd, &bytes_read);
+    data = serial_read(serial.serial_port, &bytes_read);
     gettimeofday(&tval_after, NULL);
     timersub(&tval_after, &tval_before, &tval_result);
     printf("Testing timeout %dms\n", i);
