@@ -50,7 +50,6 @@ struct s_serial {
   int baudrate;
   int data_bits;
   int stop_bits;
-  int auto_conf;
   enum e_parity parity;
   enum e_flow flow;
 };

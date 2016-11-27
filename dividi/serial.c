@@ -61,9 +61,9 @@ static int set_interface_attribs(struct s_serial *serial)
   struct termios tty;
   int err = 0;
   memset (&tty, 0, sizeof tty);
-  if (serial->auto_conf && tcgetattr (serial->serial_port, &tty) != 0) {
+  if (tcgetattr (serial->serial_port, &tty) != 0) {
     err = -1;
-  } else if (!serial->auto_conf) {
+  } else {
     /* set baudrate */
     cfsetospeed (&tty, rate_to_constant(serial->baudrate));
     cfsetispeed (&tty, rate_to_constant(serial->baudrate));
@@ -149,7 +149,8 @@ int serial_open(struct s_serial *serial)
 {
   int ret = 0;
 
-  serial->serial_port = open(serial->str_serial_port, O_RDWR | O_NOCTTY | O_SYNC);;
+  serial->serial_port = open(serial->str_serial_port, O_RDWR | O_NOCTTY | O_SYNC);
+  printf("serial: %d %s\n", serial->serial_port, serial->str_serial_port);
   if (serial->serial_port >= 0) {
     if(set_interface_attribs(serial) < 0) {
       close(serial->serial_port);

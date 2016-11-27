@@ -35,8 +35,6 @@ static int conf_parse_link_settings(char *key, char *value)
     active_link->serial.data_bits = atoi(value);
   } else if(strcmp(key, "stop_bits") == 0) {
     active_link->serial.stop_bits = atoi(value);
-  } else if(strcmp(key, "auto_conf") == 0) {
-    active_link->serial.auto_conf = atoi(value);
   } else if(strcmp(key, "parity") == 0) {
     //XXX
   } else if(strcmp(key, "flow") == 0) {

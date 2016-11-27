@@ -36,8 +36,7 @@ int main(int argc, char *argv[])
   assert(bytes_written == file_length);
   close(fd);
 
-  sprintf(serial.str_serial_port, "/dev/ttyS10");
-  serial.auto_conf = 1;
+  sprintf(serial.str_serial_port, "/dev/ttyS12");
   fd = serial_open(&serial);
   assert(fd == 0);
   // Serial port timeout test
